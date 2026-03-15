@@ -68,12 +68,24 @@ app.use((err, req, res, _next) => {
 });
 
 // ── Start — use server.listen (not app.listen) so WebSocket shares the port ───
-server.listen(PORT, () => {
+// server.listen(PORT, () => {
+//   const today = new Date().toISOString().split("T")[0];
+//   console.log(`\n🚀 Server → http://localhost:${PORT}`);
+//   console.log(`   WebSocket → ws://localhost:${PORT}/ws/activity`);
+//   console.log(`   Health    → http://localhost:${PORT}/api/health`);
+//   console.log(`   Schedule  → http://localhost:${PORT}/api/appointments/schedule?clinic_id=<id>&date=${today}`);
+//   console.log(`   Doctors   → http://localhost:${PORT}/api/doctors?clinic_id=<id>`);
+//   console.log(`   Patients  → http://localhost:${PORT}/api/patients?clinic_id=<id>\n`);
+// });
+
+
+server.listen(PORT, "0.0.0.0", () => {
   const today = new Date().toISOString().split("T")[0];
-  console.log(`\n🚀 Server → http://localhost:${PORT}`);
-  console.log(`   WebSocket → ws://localhost:${PORT}/ws/activity`);
-  console.log(`   Health    → http://localhost:${PORT}/api/health`);
-  console.log(`   Schedule  → http://localhost:${PORT}/api/appointments/schedule?clinic_id=<id>&date=${today}`);
-  console.log(`   Doctors   → http://localhost:${PORT}/api/doctors?clinic_id=<id>`);
-  console.log(`   Patients  → http://localhost:${PORT}/api/patients?clinic_id=<id>\n`);
+
+  console.log(`\n🚀 Server → http://0.0.0.0:${PORT}`);
+  console.log(`   WebSocket → ws://0.0.0.0:${PORT}/ws/activity`);
+  console.log(`   Health    → http://0.0.0.0:${PORT}/api/health`);
+  console.log(`   Schedule  → http://0.0.0.0:${PORT}/api/appointments/schedule?clinic_id=<id>&date=${today}`);
+  console.log(`   Doctors   → http://0.0.0.0:${PORT}/api/doctors?clinic_id=<id>`);
+  console.log(`   Patients  → http://0.0.0.0:${PORT}/api/patients?clinic_id=<id>\n`);
 });
