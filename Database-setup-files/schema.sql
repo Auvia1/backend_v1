@@ -262,3 +262,11 @@ CREATE TABLE activity_log (
 CREATE INDEX idx_activity_log_clinic_id  ON activity_log(clinic_id);
 CREATE INDEX idx_activity_log_created_at ON activity_log(created_at DESC);
 CREATE INDEX idx_activity_log_entity     ON activity_log(entity_type, entity_id);
+
+-- Add username column
+ALTER TABLE clinics
+ADD COLUMN username VARCHAR(100) UNIQUE;
+
+-- Add password column (store hashed password, NOT plain text)
+ALTER TABLE clinics
+ADD COLUMN password TEXT;
