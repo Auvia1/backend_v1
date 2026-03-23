@@ -95,7 +95,7 @@ const cors      = require("cors");
 const path      = require("path");
 const http      = require("http");
 const WebSocket = require("ws");
-require("dotenv").config({ path: path.join(__dirname, "../.env") });
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const { registerClient } = require("./activityBroadcaster");
 
