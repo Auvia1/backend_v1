@@ -95,7 +95,7 @@ const cors      = require("cors");
 const path      = require("path");
 const http      = require("http");
 const WebSocket = require("ws");
-require("dotenv").config({ path: path.join(__dirname, ".env") });
+require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
 const { registerClient } = require("./activityBroadcaster");
 
@@ -138,7 +138,7 @@ app.use("/api/activity",     require("./routes/activity"));
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/api/health", async (req, res) => {
   try {
-    const pool = require("../../database/db");
+    const pool = require("../database/db");
     await pool.query("SELECT 1");
     res.json({ status: "ok", db: "connected", time: new Date().toISOString() });
   } catch (err) {
