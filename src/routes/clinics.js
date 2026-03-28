@@ -157,7 +157,172 @@ router.post("/register", async (req, res) => {
   }
 });
 
-// ─── GET /api/clinics/search/by-name (Search clinic by name) ────────────────────
+// ─── GET /api/clinics/all-with-coordinates (Get all clinics with lat/long for maps) ─
+router.get("/all-with-coordinates", async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         id, name, email, phone, latitude, longitude,
+         city, state, postal_code, clinic_type,
+         subscription_plan, subscription_status,
+         created_at
+       FROM clinics
+       WHERE deleted_at IS NULL AND latitude IS NOT NULL AND longitude IS NOT NULL
+       ORDER BY created_at DESC`,
+    );
+
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── GET /api/clinics/map-data (Get clinic map data - optimized for maps) ────────
+router.get("/map-data", async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         id, name, email, phone, latitude, longitude,
+         address, city, state, clinic_type,
+         subscription_plan, subscription_status
+       FROM clinics
+       WHERE deleted_at IS NULL AND latitude IS NOT NULL AND longitude IS NOT NULL
+       ORDER BY name`,
+    );
+
+    // Transform to GeoJSON format for map libraries
+    const features = rows.map(clinic => ({
+      type: "Feature",
+      geometry: {
+        type: "Point",
+        coordinates: [clinic.longitude, clinic.latitude] // GeoJSON uses [lon, lat]
+      },
+      properties: {
+        id: clinic.id,
+        name: clinic.name,
+        email: clinic.email,
+        phone: clinic.phone,
+        address: clinic.address,
+        city: clinic.city,
+        state: clinic.state,
+        clinicType: clinic.clinic_type,
+        plan: clinic.subscription_plan,
+        status: clinic.subscription_status
+      }
+    }));
+
+    res.json({
+      success: true,
+      type: "FeatureCollection",
+      features: features,
+      metadata: {
+        total: rows.length,
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── GET /api/clinics/coordinates-by-city (Get clinic coordinates grouped by city) ──
+router.get("/coordinates-by-city", async (req, res) => {
+  try {
+    const { city } = req.query;
+
+    let query = `SELECT
+                   id, name, phone, email, latitude, longitude,
+                   address, city, state, clinic_type
+                 FROM clinics
+                 WHERE deleted_at IS NULL AND latitude IS NOT NULL AND longitude IS NOT NULL`;
+
+    const params = [];
+
+    if (city) {
+      query += ` AND city ILIKE $1`;
+      params.push(`%${city}%`);
+    }
+
+    query += ` ORDER BY city, name`;
+
+    const { rows } = await pool.query(query, params);
+
+    // Group by city
+    const groupedByCities = {};
+    rows.forEach(clinic => {
+      if (!groupedByCities[clinic.city]) {
+        groupedByCities[clinic.city] = [];
+      }
+      groupedByCities[clinic.city].push({
+        id: clinic.id,
+        name: clinic.name,
+        phone: clinic.phone,
+        email: clinic.email,
+        latitude: clinic.latitude,
+        longitude: clinic.longitude,
+        address: clinic.address,
+        type: clinic.clinic_type
+      });
+    });
+
+    res.json({
+      success: true,
+      data: groupedByCities,
+      totalCities: Object.keys(groupedByCities).length,
+      totalClinics: rows.length
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── GET /api/clinics/nearby (Get clinics near coordinates with radius) ──────────
+router.get("/nearby", async (req, res) => {
+  try {
+    const { latitude, longitude, radius_km } = req.query;
+
+    if (!latitude || !longitude) {
+      return res.status(400).json({
+        success: false,
+        error: "latitude and longitude are required"
+      });
+    }
+
+    const radiusKm = parseFloat(radius_km) || 10; // Default 10 km radius
+
+    // Calculate distance using Haversine formula
+    const { rows } = await pool.query(
+      `SELECT
+         id, name, email, phone, latitude, longitude,
+         address, city, state, clinic_type,
+         subscription_plan,
+         (6371 * acos(cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2))
+         + sin(radians($1)) * sin(radians(latitude)))) AS distance_km
+       FROM clinics
+       WHERE deleted_at IS NULL
+         AND latitude IS NOT NULL
+         AND longitude IS NOT NULL
+         AND (6371 * acos(cos(radians($1)) * cos(radians(latitude)) * cos(radians(longitude) - radians($2))
+         + sin(radians($1)) * sin(radians(latitude)))) <= $3
+       ORDER BY distance_km ASC`,
+      [latitude, longitude, radiusKm]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        userLocation: { latitude, longitude },
+        radiusKm: radiusKm,
+        clinicsFound: rows.length,
+        clinics: rows
+      }
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+
 router.get("/search/by-name", async (req, res) => {
   try {
     const { name } = req.query;
