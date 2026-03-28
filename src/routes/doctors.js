@@ -25,6 +25,279 @@ router.get("/", async (req, res) => {
   }
 });
 
+// ─── POST /api/doctors — create new doctor ──────────────────────────────────
+router.post("/", async (req, res) => {
+  try {
+    const { clinic_id, name, speciality, consultation_duration_minutes, buffer_time_minutes, max_appointments_per_day } = req.body;
+
+    if (!clinic_id || !name) {
+      return res.status(400).json({ success: false, error: "clinic_id and name are required" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO doctors (clinic_id, name, speciality, consultation_duration_minutes, buffer_time_minutes, max_appointments_per_day)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING *`,
+      [clinic_id, name, speciality || null, consultation_duration_minutes || 30, buffer_time_minutes || 0, max_appointments_per_day || null]
+    );
+
+    res.status(201).json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── GET /api/doctors/:id — get single doctor ───────────────────────────────
+router.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `SELECT * FROM doctors WHERE id = $1 AND deleted_at IS NULL`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Doctor not found" });
+    }
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── PATCH /api/doctors/:id — update doctor ─────────────────────────────────
+router.patch("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, speciality, consultation_duration_minutes, buffer_time_minutes, max_appointments_per_day, is_active } = req.body;
+
+    const updates = [];
+    const values = [];
+    let paramCount = 1;
+
+    if (name !== undefined) { updates.push(`name = $${paramCount++}`); values.push(name); }
+    if (speciality !== undefined) { updates.push(`speciality = $${paramCount++}`); values.push(speciality); }
+    if (consultation_duration_minutes !== undefined) { updates.push(`consultation_duration_minutes = $${paramCount++}`); values.push(consultation_duration_minutes); }
+    if (buffer_time_minutes !== undefined) { updates.push(`buffer_time_minutes = $${paramCount++}`); values.push(buffer_time_minutes); }
+    if (max_appointments_per_day !== undefined) { updates.push(`max_appointments_per_day = $${paramCount++}`); values.push(max_appointments_per_day); }
+    if (is_active !== undefined) { updates.push(`is_active = $${paramCount++}`); values.push(is_active); }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, error: "No fields to update" });
+    }
+
+    values.push(id);
+    const query = `UPDATE doctors SET ${updates.join(", ")} WHERE id = $${paramCount} AND deleted_at IS NULL RETURNING *`;
+    const result = await pool.query(query, values);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Doctor not found" });
+    }
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── DELETE /api/doctors/:id — soft delete doctor ──────────────────────────
+router.delete("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `UPDATE doctors SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL RETURNING *`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Doctor not found" });
+    }
+
+    res.json({ success: true, message: "Doctor deleted successfully", data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// DOCTOR SCHEDULE APIs
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─── GET /api/doctors/:id/schedule — get all schedules for a doctor ─────────
+router.get("/:id/schedule", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { clinic_id } = req.query;
+
+    if (!clinic_id) {
+      return res.status(400).json({ success: false, error: "clinic_id query param required" });
+    }
+
+    const result = await pool.query(
+      `SELECT * FROM doctor_schedule
+       WHERE doctor_id = $1 AND clinic_id = $2
+       ORDER BY day_of_week ASC`,
+      [id, clinic_id]
+    );
+
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── POST /api/doctors/:id/schedule — create schedule for doctor ────────────
+router.post("/:id/schedule", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { clinic_id, day_of_week, start_time, end_time, slot_duration_minutes, effective_from, effective_to } = req.body;
+
+    if (!clinic_id || day_of_week === undefined || !start_time || !end_time || !slot_duration_minutes) {
+      return res.status(400).json({ success: false, error: "clinic_id, day_of_week, start_time, end_time, and slot_duration_minutes are required" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO doctor_schedule (clinic_id, doctor_id, day_of_week, start_time, end_time, slot_duration_minutes, effective_from, effective_to)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [clinic_id, id, day_of_week, start_time, end_time, slot_duration_minutes, effective_from || null, effective_to || null]
+    );
+
+    res.status(201).json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── PATCH /api/doctors/:id/schedule/:schedule_id — update schedule ────────
+router.patch("/:id/schedule/:schedule_id", async (req, res) => {
+  try {
+    const { id, schedule_id } = req.params;
+    const { day_of_week, start_time, end_time, slot_duration_minutes, effective_from, effective_to } = req.body;
+
+    const updates = [];
+    const values = [];
+    let paramCount = 1;
+
+    if (day_of_week !== undefined) { updates.push(`day_of_week = $${paramCount++}`); values.push(day_of_week); }
+    if (start_time !== undefined) { updates.push(`start_time = $${paramCount++}`); values.push(start_time); }
+    if (end_time !== undefined) { updates.push(`end_time = $${paramCount++}`); values.push(end_time); }
+    if (slot_duration_minutes !== undefined) { updates.push(`slot_duration_minutes = $${paramCount++}`); values.push(slot_duration_minutes); }
+    if (effective_from !== undefined) { updates.push(`effective_from = $${paramCount++}`); values.push(effective_from); }
+    if (effective_to !== undefined) { updates.push(`effective_to = $${paramCount++}`); values.push(effective_to); }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, error: "No fields to update" });
+    }
+
+    values.push(schedule_id);
+    values.push(id);
+    const query = `UPDATE doctor_schedule SET ${updates.join(", ")} WHERE id = $${paramCount++} AND doctor_id = $${paramCount} RETURNING *`;
+    const result = await pool.query(query, values);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Schedule not found" });
+    }
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── DELETE /api/doctors/:id/schedule/:schedule_id — delete schedule ───────
+router.delete("/:id/schedule/:schedule_id", async (req, res) => {
+  try {
+    const { id, schedule_id } = req.params;
+
+    const result = await pool.query(
+      `DELETE FROM doctor_schedule WHERE id = $1 AND doctor_id = $2 RETURNING *`,
+      [schedule_id, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Schedule not found" });
+    }
+
+    res.json({ success: true, message: "Schedule deleted successfully", data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// DOCTOR TIME OFF APIs
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─── GET /api/doctors/:id/time-off — get all time off for a doctor ─────────
+router.get("/:id/time-off", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { clinic_id } = req.query;
+
+    if (!clinic_id) {
+      return res.status(400).json({ success: false, error: "clinic_id query param required" });
+    }
+
+    const result = await pool.query(
+      `SELECT * FROM doctor_time_off
+       WHERE doctor_id = $1 AND clinic_id = $2
+       ORDER BY start_time DESC`,
+      [id, clinic_id]
+    );
+
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── POST /api/doctors/:id/time-off — create time off for doctor ───────────
+router.post("/:id/time-off", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { clinic_id, start_time, end_time, reason } = req.body;
+
+    if (!clinic_id || !start_time || !end_time) {
+      return res.status(400).json({ success: false, error: "clinic_id, start_time, and end_time are required (ISO 8601 format)" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO doctor_time_off (clinic_id, doctor_id, start_time, end_time, reason)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING *`,
+      [clinic_id, id, start_time, end_time, reason || null]
+    );
+
+    res.status(201).json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── DELETE /api/doctors/:id/time-off/:timeoff_id — delete time off ────────
+router.delete("/:id/time-off/:timeoff_id", async (req, res) => {
+  try {
+    const { id, timeoff_id } = req.params;
+
+    const result = await pool.query(
+      `DELETE FROM doctor_time_off WHERE id = $1 AND doctor_id = $2 RETURNING *`,
+      [timeoff_id, id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Time off not found" });
+    }
+
+    res.json({ success: true, message: "Time off deleted successfully", data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ─── GET /api/doctors/:id/slots?date=YYYY-MM-DD&clinic_id= ───────────────────
 // Schema changes:
 //   • doctor_time_off uses TIMESTAMPTZ ranges — no separate `date` column
