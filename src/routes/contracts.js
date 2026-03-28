@@ -1,10 +1,9 @@
 const express = require("express");
 const router  = express.Router();
 const pool    = require("../../database/db");
-const { authenticateToken } = require("./auth");
 
 // ─── GET /api/contracts/:clinic_id ────────────────────────────────────────────
-router.get("/:clinic_id", authenticateToken, async (req, res) => {
+router.get("/:clinic_id", async (req, res) => {
   try {
     if (req.clinic_id !== req.params.clinic_id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
@@ -30,7 +29,7 @@ router.get("/:clinic_id", authenticateToken, async (req, res) => {
 });
 
 // ─── POST /api/contracts (Create contract) ────────────────────────────────────
-router.post("/", authenticateToken, async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const { clinic_id, contract_start, contract_end, agreement } = req.body;
 
@@ -64,7 +63,7 @@ router.post("/", authenticateToken, async (req, res) => {
 });
 
 // ─── PATCH /api/contracts/:clinic_id ──────────────────────────────────────────
-router.patch("/:clinic_id", authenticateToken, async (req, res) => {
+router.patch("/:clinic_id", async (req, res) => {
   try {
     if (req.clinic_id !== req.params.clinic_id) {
       return res.status(403).json({ success: false, error: "Forbidden" });

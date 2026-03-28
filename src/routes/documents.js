@@ -1,10 +1,9 @@
 const express = require("express");
 const router  = express.Router();
 const pool    = require("../../database/db");
-const { authenticateToken } = require("./auth");
 
 // ─── GET /api/documents?clinic_id=<id> ────────────────────────────────────────
-router.get("/", authenticateToken, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const { clinic_id } = req.query;
 
@@ -33,7 +32,7 @@ router.get("/", authenticateToken, async (req, res) => {
 
 // ─── POST /api/documents (Create document record) ──────────────────────────────
 // Note: This saves the file metadata. Upload actual files to cloud storage separately
-router.post("/", authenticateToken, async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const { clinic_id, file_name, file_url, file_type, file_size, doc_type } = req.body;
 
@@ -63,7 +62,7 @@ router.post("/", authenticateToken, async (req, res) => {
 });
 
 // ─── DELETE /api/documents/:id ────────────────────────────────────────────────
-router.delete("/:id", authenticateToken, async (req, res) => {
+router.delete("/:id", async (req, res) => {
   try {
     const { rows: docRows } = await pool.query(
       `SELECT clinic_id FROM clinic_documents WHERE id = $1`,

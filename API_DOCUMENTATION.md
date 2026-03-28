@@ -8,7 +8,9 @@
 
 ---
 
-## 🔐 Authentication APIs
+## 🔐 Authentication APIs (3 Total)
+
+### 1. POST /auth/login
 
 ### 1. POST /auth/login
 **Login clinic admin**
@@ -96,7 +98,7 @@
 
 ---
 
-## 🏥 Clinic Registration & Management
+## 🏥 Clinic Registration & Management (6 Total)
 
 ### 4. POST /clinics/register
 **Complete clinic registration (multi-step form submission)**
@@ -107,6 +109,9 @@ This is the main endpoint for your NewClinicDialog component.
 **Input:**
 ```json
 {
+  "username": "string (required, unique username for clinic login)",
+  "password": "string (required, clinic login password)",
+
   "clinicName": "string (required)",
   "clinicType": "string (optional)",
   "address": "string (optional)",
@@ -115,6 +120,8 @@ This is the main endpoint for your NewClinicDialog component.
   "postal": "string (optional)",
   "phone": "string (required, must be 10 digits)",
   "email": "string (required, valid email)",
+  "latitude": "number (optional, decimal format)",
+  "longitude": "number (optional, decimal format)",
 
   "ownerName": "string (required)",
   "ownerEmail": "string (required, valid email)",
@@ -257,7 +264,101 @@ This is the main endpoint for your NewClinicDialog component.
 
 ---
 
-## 👥 User Management (Owners, Receptionists, Doctors)
+### 8. GET /clinics/admin/stats
+**Get dashboard statistics (total clinics, phone numbers, breakdown by status/plan)**
+
+**Authentication**: Required ✅
+
+**Input**: None (uses query token)
+
+**Output (Success 200):**
+```json
+{
+  "success": true,
+  "data": {
+    "totalClinics": 42,
+    "totalPhoneNumbers": 87,
+    "statusBreakdown": {
+      "trial": 10,
+      "active": 28,
+      "past_due": 2,
+      "suspended": 2,
+      "canceled": 0
+    },
+    "planBreakdown": {
+      "trial": 10,
+      "Starter": 15,
+      "Growth": 12,
+      "Enterprise": 5
+    },
+    "recentClinics": [
+      {
+        "id": "uuid",
+        "name": "Apollo Clinic",
+        "email": "apollo@example.com",
+        "phone": "9876543210",
+        "subscription_plan": "Growth",
+        "subscription_status": "active",
+        "owner_name": "Dr. John Smith",
+        "created_at": "2026-03-28T01:07:41Z"
+      }
+    ]
+  }
+}
+```
+
+---
+
+### 9. GET /clinics/admin/all
+**Get all clinics with pagination, search, and filters**
+
+**Authentication**: Required ✅
+
+**Input:**
+- Query Parameters (all optional):
+  - `page` (integer, default: 1) - Page number
+  - `limit` (integer, default: 20) - Clinics per page
+  - `search` (string) - Search by name, email, or phone
+  - `status` (string) - Filter by subscription_status (trial/active/past_due/suspended/canceled)
+  - `plan` (string) - Filter by subscription_plan (Starter/Growth/Enterprise/trial)
+
+**Example Request:**
+```
+GET /api/clinics/admin/all?page=1&limit=20&search=apollo&status=active
+```
+
+**Output (Success 200):**
+```json
+{
+  "success": true,
+  "data": {
+    "clinics": [
+      {
+        "id": "uuid",
+        "name": "Apollo Clinic",
+        "email": "clinic@example.com",
+        "phone": "9876543210",
+        "clinic_type": "General Practice",
+        "subscription_plan": "Growth",
+        "subscription_status": "active",
+        "owner_name": "Dr. John Smith",
+        "created_at": "2026-03-28T01:07:41Z",
+        "updated_at": "2026-03-28T01:07:41Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 20,
+      "total": 42,
+      "pages": 3
+    }
+  }
+}
+```
+
+---
+
+## 👥 User Management (5 Total) (Owners, Receptionists, Doctors)
 
 ### 8. GET /users?clinic_id=<id>
 **List all users for a clinic**
@@ -411,7 +512,7 @@ This is the main endpoint for your NewClinicDialog component.
 
 ---
 
-## 💳 Billing Management
+## 💳 Billing Management (3 Total)
 
 ### 13. GET /billing/:clinic_id
 **Get clinic billing information**
@@ -527,7 +628,7 @@ This is the main endpoint for your NewClinicDialog component.
 
 ---
 
-## 📄 Documents Management
+## 📄 Documents Management (3 Total)
 
 ### 16. GET /documents?clinic_id=<id>
 **List all documents for a clinic**
@@ -614,7 +715,7 @@ This is the main endpoint for your NewClinicDialog component.
 
 ---
 
-## 📋 Contracts Management
+## 📋 Contracts Management (3 Total)
 
 ### 19. GET /contracts/:clinic_id
 **Get clinic contract**
@@ -799,13 +900,17 @@ curl -X POST http://localhost:4002/api/auth/login \
 curl -X POST http://localhost:4002/api/clinics/register \
   -H "Content-Type: application/json" \
   -d '{
+    "username":"clinic_admin",
+    "password":"secure_password_123",
     "clinicName":"My Clinic",
     "email":"clinic@example.com",
     "phone":"9876543210",
     "ownerName":"John Doe",
     "ownerEmail":"john@example.com",
     "plan":"Starter",
-    "billingCycle":"Monthly"
+    "billingCycle":"Monthly",
+    "latitude":19.0760,
+    "longitude":72.8777
   }'
 ```
 

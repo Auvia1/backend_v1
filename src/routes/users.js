@@ -1,10 +1,9 @@
 const express = require("express");
 const router  = express.Router();
 const pool    = require("../../database/db");
-const { authenticateToken } = require("./auth");
 
 // ─── GET /api/users?clinic_id=<id> ────────────────────────────────────────────
-router.get("/", authenticateToken, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const { clinic_id } = req.query;
 
@@ -32,7 +31,7 @@ router.get("/", authenticateToken, async (req, res) => {
 });
 
 // ─── GET /api/users/:id ───────────────────────────────────────────────────────
-router.get("/:id", authenticateToken, async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT
@@ -57,7 +56,7 @@ router.get("/:id", authenticateToken, async (req, res) => {
 });
 
 // ─── POST /api/users (Create user) ────────────────────────────────────────────
-router.post("/", authenticateToken, async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const { clinic_id, name, email, phone, role, govt_id, shift_hours } = req.body;
 
@@ -86,7 +85,7 @@ router.post("/", authenticateToken, async (req, res) => {
 });
 
 // ─── PATCH /api/users/:id ─────────────────────────────────────────────────────
-router.patch("/:id", authenticateToken, async (req, res) => {
+router.patch("/:id", async (req, res) => {
   try {
     const { name, email, phone, role, govt_id, shift_hours, is_active } = req.body;
 
@@ -125,7 +124,7 @@ router.patch("/:id", authenticateToken, async (req, res) => {
 });
 
 // ─── DELETE /api/users/:id ────────────────────────────────────────────────────
-router.delete("/:id", authenticateToken, async (req, res) => {
+router.delete("/:id", async (req, res) => {
   try {
     const { rows: userRows } = await pool.query(
       `SELECT clinic_id FROM users WHERE id = $1 AND deleted_at IS NULL`,

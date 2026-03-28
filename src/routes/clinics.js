@@ -1,7 +1,6 @@
 const express = require("express");
 const router  = express.Router();
 const pool    = require("../../database/db");
-const { authenticateToken } = require("./auth");
 
 // Normalize payment method to match enum values
 function normalizePaymentMethod(method) {
@@ -59,12 +58,16 @@ router.post("/register", async (req, res) => {
       receptionistName, receptionistEmail, receptionistPhone, receptionistShift,
       plan, billingCycle, paymentMethod, gstNumber,
       contractStart, contractEnd, agreement,
+      username, password, latitude, longitude,
       documents = [],
     } = req.body;
 
     // Validate required fields
     if (!clinicName || !email || !phone) {
       throw new Error("Clinic name, email, and phone are required");
+    }
+    if (!username || !password) {
+      throw new Error("Username and password are required");
     }
     if (!ownerName || !ownerEmail) {
       throw new Error("Owner name and email are required");
@@ -75,12 +78,14 @@ router.post("/register", async (req, res) => {
     const clinicRes = await client.query(
       `INSERT INTO clinics (
         name, clinic_type, address, city, state, postal_code,
-        phone, email, owner_name, subscription_plan, subscription_status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        phone, email, owner_name, username, password,
+        latitude, longitude, subscription_plan, subscription_status
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING id, name, email`,
       [
         clinicName, clinicType, address, city, state, postal,
-        phone, email, ownerName, normalizedPlan, "trial"
+        phone, email, ownerName, username, password,
+        latitude || null, longitude || null, normalizedPlan, "trial"
       ]
     );
 
@@ -153,7 +158,7 @@ router.post("/register", async (req, res) => {
 });
 
 // ─── GET /api/clinics/:id ─────────────────────────────────────────────────────
-router.get("/:id", authenticateToken, async (req, res) => {
+router.get("/:id", async (req, res) => {
   try {
     if (req.clinic_id !== req.params.id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
@@ -179,7 +184,7 @@ router.get("/:id", authenticateToken, async (req, res) => {
 });
 
 // ─── PATCH /api/clinics/:id ───────────────────────────────────────────────────
-router.patch("/:id", authenticateToken, async (req, res) => {
+router.patch("/:id", async (req, res) => {
   try {
     if (req.clinic_id !== req.params.id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
@@ -214,7 +219,7 @@ router.patch("/:id", authenticateToken, async (req, res) => {
 });
 
 // ─── POST /api/clinics/:id/change-password ────────────────────────────────────
-router.post("/:id/change-password", authenticateToken, async (req, res) => {
+router.post("/:id/change-password", async (req, res) => {
   try {
     if (req.clinic_id !== req.params.id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
@@ -248,6 +253,143 @@ router.post("/:id/change-password", authenticateToken, async (req, res) => {
     );
 
     res.json({ success: true, message: "Password updated successfully" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── GET /api/clinics/admin/stats ─────────────────────────────────────────────
+// Get dashboard statistics (total clinics, phone numbers, etc.)
+router.get("/admin/stats", async (req, res) => {
+  try {
+    // Get total clinics
+    const clinicCountRes = await pool.query(
+      `SELECT COUNT(*) as total FROM clinics WHERE deleted_at IS NULL`
+    );
+    const totalClinics = parseInt(clinicCountRes.rows[0].total);
+
+    // Get total phone numbers
+    const phoneCountRes = await pool.query(
+      `SELECT COUNT(*) as total FROM phone_numbers WHERE is_active = TRUE`
+    );
+    const totalPhoneNumbers = parseInt(phoneCountRes.rows[0].total);
+
+    // Get clinics by subscription status
+    const statusRes = await pool.query(
+      `SELECT subscription_status, COUNT(*) as count
+       FROM clinics
+       WHERE deleted_at IS NULL
+       GROUP BY subscription_status`
+    );
+    const statusBreakdown = {};
+    statusRes.rows.forEach(row => {
+      statusBreakdown[row.subscription_status] = parseInt(row.count);
+    });
+
+    // Get clinics by subscription plan
+    const planRes = await pool.query(
+      `SELECT subscription_plan, COUNT(*) as count
+       FROM clinics
+       WHERE deleted_at IS NULL
+       GROUP BY subscription_plan`
+    );
+    const planBreakdown = {};
+    planRes.rows.forEach(row => {
+      planBreakdown[row.subscription_plan] = parseInt(row.count);
+    });
+
+    // Get recent clinics (last 10)
+    const recentRes = await pool.query(
+      `SELECT id, name, email, phone, subscription_plan, subscription_status, created_at
+       FROM clinics
+       WHERE deleted_at IS NULL
+       ORDER BY created_at DESC
+       LIMIT 10`
+    );
+
+    res.json({
+      success: true,
+      data: {
+        totalClinics,
+        totalPhoneNumbers,
+        statusBreakdown,
+        planBreakdown,
+        recentClinics: recentRes.rows
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── GET /api/clinics/admin/all ────────────────────────────────────────────────
+// Get all clinics with pagination, search, and filters
+router.get("/admin/all", async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const search = req.query.search || "";
+    const status = req.query.status || null;
+    const plan = req.query.plan || null;
+
+    const offset = (page - 1) * limit;
+    let query = `SELECT
+                   id, name, email, phone, clinic_type,
+                   subscription_plan, subscription_status,
+                   owner_name, created_at, updated_at
+                 FROM clinics
+                 WHERE deleted_at IS NULL`;
+
+    const params = [];
+    let paramCount = 1;
+
+    // Search by name, email, or phone
+    if (search) {
+      query += ` AND (name ILIKE $${paramCount} OR email ILIKE $${paramCount} OR phone ILIKE $${paramCount})`;
+      params.push(`%${search}%`);
+      paramCount++;
+    }
+
+    // Filter by status
+    if (status) {
+      query += ` AND subscription_status = $${paramCount}`;
+      params.push(status);
+      paramCount++;
+    }
+
+    // Filter by plan
+    if (plan) {
+      query += ` AND subscription_plan = $${paramCount}`;
+      params.push(plan);
+      paramCount++;
+    }
+
+    // Get total count
+    const countQuery = query.replace(
+      /SELECT.*?FROM/,
+      "SELECT COUNT(*) as total FROM"
+    );
+    const countRes = await pool.query(countQuery, params);
+    const totalClinics = parseInt(countRes.rows[0].total);
+
+    // Get paginated results
+    query += ` ORDER BY created_at DESC LIMIT $${paramCount} OFFSET $${paramCount + 1}`;
+    params.push(limit, offset);
+
+    const { rows } = await pool.query(query, params);
+
+    res.json({
+      success: true,
+      data: {
+        clinics: rows,
+        pagination: {
+          page,
+          limit,
+          total: totalClinics,
+          pages: Math.ceil(totalClinics / limit)
+        }
+      }
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

@@ -96,7 +96,7 @@ router.post("/login", async (req, res) => {
 });
 
 // ─── GET /api/auth/me ─────────────────────────────────────────────────────────
-router.get("/me", authenticateToken, async (req, res) => {
+router.get("/me", async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT
@@ -120,7 +120,7 @@ router.get("/me", authenticateToken, async (req, res) => {
 });
 
 // ─── POST /api/auth/logout ────────────────────────────────────────────────────
-router.post("/logout", authenticateToken, (req, res) => {
+router.post("/logout", (req, res) => {
   res.json({ success: true, message: "Logged out successfully" });
 });
 

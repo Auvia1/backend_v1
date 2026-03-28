@@ -10,7 +10,7 @@ I have a React-based frontend with a multi-step clinic registration dialog and a
 
 ### Current Frontend Component
 - **Location**: `NewClinicDialog.jsx` (7-step dialog)
-  - Step 0: Basic Details (clinic name, type, address, city, state, postal, phone, email)
+  - Step 0: Basic Details (clinic name, type, address, city, state, postal, phone, email, **username, password, latitude, longitude**)
   - Step 1: Owner Details (owner name, email, phone, govt ID)
   - Step 2: Receptionist (receptionist name, email, phone, shift)
   - Step 3: Plan & Payment (plan, billing cycle, payment method, card details, GST)
@@ -146,7 +146,11 @@ const response = await fetch('http://localhost:4002/api/clinics/register', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
-    // Step 0
+    // Credentials
+    username: "apollo_clinic",
+    password: "secure_password_123",
+
+    // Step 0: Basic Details
     clinicName: "Apollo Clinic",
     clinicType: "General Practice",
     address: "123 Main St",
@@ -155,31 +159,33 @@ const response = await fetch('http://localhost:4002/api/clinics/register', {
     postal: "400001",
     phone: "9876543210",
     email: "clinic@example.com",
+    latitude: 19.0760,
+    longitude: 72.8777,
 
-    // Step 1
+    // Step 1: Owner Details
     ownerName: "Dr. John Smith",
     ownerEmail: "john@example.com",
     ownerPhone: "9876543211",
     ownerId: "DL12345678",
 
-    // Step 2
+    // Step 2: Receptionist
     receptionistName: "Jane Doe",
     receptionistEmail: "jane@example.com",
     receptionistPhone: "9876543212",
     receptionistShift: "9AM-6PM weekdays",
 
-    // Step 3
+    // Step 3: Plan & Billing
     plan: "Growth",
     billingCycle: "Monthly",
     paymentMethod: "Card",
     gstNumber: "27ABCDE1234F2Z5",
 
-    // Step 5
+    // Step 5: Contracts
     contractStart: "2024-01-01",
     contractEnd: "2025-01-01",
     agreement: true,
 
-    // Step 4 (after uploading to cloud storage)
+    // Step 4: Documents (after uploading to cloud storage)
     documents: [
       {
         name: "clinic_license.pdf",

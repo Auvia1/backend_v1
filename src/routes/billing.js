@@ -1,7 +1,6 @@
 const express = require("express");
 const router  = express.Router();
 const pool    = require("../../database/db");
-const { authenticateToken } = require("./auth");
 
 // Normalize payment method to match enum values
 function normalizePaymentMethod(method) {
@@ -48,7 +47,7 @@ function normalizeBillingCycle(cycle) {
 }
 
 // ─── GET /api/billing/:clinic_id ──────────────────────────────────────────────
-router.get("/:clinic_id", authenticateToken, async (req, res) => {
+router.get("/:clinic_id", async (req, res) => {
   try {
     if (req.clinic_id !== req.params.clinic_id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
@@ -75,7 +74,7 @@ router.get("/:clinic_id", authenticateToken, async (req, res) => {
 });
 
 // ─── POST /api/billing (Create billing) ────────────────────────────────────────
-router.post("/", authenticateToken, async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const {
       clinic_id, plan, billing_cycle, payment_method,
@@ -122,7 +121,7 @@ router.post("/", authenticateToken, async (req, res) => {
 });
 
 // ─── PATCH /api/billing/:clinic_id ────────────────────────────────────────────
-router.patch("/:clinic_id", authenticateToken, async (req, res) => {
+router.patch("/:clinic_id", async (req, res) => {
   try {
     if (req.clinic_id !== req.params.clinic_id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
