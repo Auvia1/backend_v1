@@ -157,6 +157,197 @@ router.post("/register", async (req, res) => {
   }
 });
 
+// ─── GET /api/clinics/search/by-name (Search clinic by name) ────────────────────
+router.get("/search/by-name", async (req, res) => {
+  try {
+    const { name } = req.query;
+
+    if (!name) {
+      return res.status(400).json({ success: false, error: "Clinic name is required" });
+    }
+
+    const { rows } = await pool.query(
+      `SELECT
+         id, name, email, phone, address, timezone,
+         subscription_plan, subscription_status, username, created_at, updated_at
+       FROM clinics
+       WHERE name ILIKE $1 AND deleted_at IS NULL`,
+      [`%${name}%`]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Clinic not found" });
+    }
+
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── GET /api/clinics/search/by-name/full (Search clinic by name with all settings) ────────────────────
+router.get("/search/by-name/full", async (req, res) => {
+  try {
+    const { name } = req.query;
+
+    if (!name) {
+      return res.status(400).json({ success: false, error: "Clinic name is required" });
+    }
+
+    // Get clinic basic info
+    const clinicRes = await pool.query(
+      `SELECT
+         id, name, email, phone, address, city, state, postal_code,
+         clinic_type, timezone, subscription_plan, subscription_status,
+         owner_name, username, created_at, updated_at
+       FROM clinics
+       WHERE name ILIKE $1 AND deleted_at IS NULL`,
+      [`%${name}%`]
+    );
+
+    if (clinicRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Clinic not found" });
+    }
+
+    // For each clinic, fetch settings and phone numbers
+    const clinicsWithSettings = await Promise.all(
+      clinicRes.rows.map(async (clinic) => {
+        // Get clinic settings
+        const settingsRes = await pool.query(
+          `SELECT * FROM clinic_settings WHERE clinic_id = $1`,
+          [clinic.id]
+        );
+
+        // Get phone numbers
+        const phonesRes = await pool.query(
+          `SELECT id, number, service_type, status, is_active FROM phone_numbers
+           WHERE clinic_id = $1 ORDER BY created_at DESC`,
+          [clinic.id]
+        );
+
+        return {
+          clinic: clinic,
+          settings: settingsRes.rows[0] || null,
+          phone_numbers: phonesRes.rows || []
+        };
+      })
+    );
+
+    res.json({ success: true, data: clinicsWithSettings });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── GET /api/clinics/:id/settings (Get clinic settings by ID) ────────────────────
+router.get("/:id/settings", async (req, res) => {
+  try {
+    // Get clinic basic info
+    const clinicRes = await pool.query(
+      `SELECT
+         id, name, email, phone, address, city, state, postal_code,
+         clinic_type, timezone, subscription_plan, subscription_status,
+         owner_name, username, created_at, updated_at
+       FROM clinics
+       WHERE id = $1 AND deleted_at IS NULL`,
+      [req.params.id]
+    );
+
+    if (clinicRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Clinic not found" });
+    }
+
+    const clinic = clinicRes.rows[0];
+
+    // Get clinic settings
+    const settingsRes = await pool.query(
+      `SELECT * FROM clinic_settings WHERE clinic_id = $1`,
+      [req.params.id]
+    );
+
+    // Get phone numbers
+    const phonesRes = await pool.query(
+      `SELECT id, number, service_type, status, is_active FROM phone_numbers
+       WHERE clinic_id = $1 ORDER BY created_at DESC`,
+      [req.params.id]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        clinic: clinic,
+        settings: settingsRes.rows[0] || null,
+        phone_numbers: phonesRes.rows || []
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── PATCH /api/clinics/:id/settings (Update clinic settings) ────────────────────
+router.patch("/:id/settings", async (req, res) => {
+  try {
+    const {
+      advance_booking_days,
+      min_booking_notice_period,
+      cancellation_window_hours,
+      followup_time,
+      ai_agent_enabled,
+      ai_agent_languages,
+      whatsapp_number,
+      logo_url,
+      price_per_appointment
+    } = req.body;
+
+    // Check if clinic exists
+    const clinicCheck = await pool.query(
+      `SELECT id FROM clinics WHERE id = $1 AND deleted_at IS NULL`,
+      [req.params.id]
+    );
+
+    if (clinicCheck.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Clinic not found" });
+    }
+
+    // Update clinic settings
+    const settingsRes = await pool.query(
+      `UPDATE clinic_settings
+       SET
+         advance_booking_days = COALESCE($1, advance_booking_days),
+         min_booking_notice_period = COALESCE($2, min_booking_notice_period),
+         cancellation_window_hours = COALESCE($3, cancellation_window_hours),
+         followup_time = COALESCE($4, followup_time),
+         ai_agent_enabled = COALESCE($5, ai_agent_enabled),
+         ai_agent_languages = COALESCE($6, ai_agent_languages),
+         whatsapp_number = COALESCE($7, whatsapp_number),
+         logo_url = COALESCE($8, logo_url),
+         price_per_appointment = COALESCE($9, price_per_appointment)
+       WHERE clinic_id = $10
+       RETURNING *`,
+      [
+        advance_booking_days,
+        min_booking_notice_period,
+        cancellation_window_hours,
+        followup_time,
+        ai_agent_enabled,
+        ai_agent_languages,
+        whatsapp_number,
+        logo_url,
+        price_per_appointment,
+        req.params.id
+      ]
+    );
+
+    res.json({
+      success: true,
+      data: settingsRes.rows[0]
+    });
+  } catch (err) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
 // ─── GET /api/clinics/:id ─────────────────────────────────────────────────────
 router.get("/:id", async (req, res) => {
   try {

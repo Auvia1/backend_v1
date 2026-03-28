@@ -47,6 +47,7 @@ app.use("/api/activity",     require("./routes/activity"));
 app.use("/api/billing",      require("./routes/billing"));
 app.use("/api/documents",    require("./routes/documents"));
 app.use("/api/contracts",    require("./routes/contracts"));
+app.use("/api/phone-numbers", require("./routes/phone-numbers"));
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/api/health", async (req, res) => {
