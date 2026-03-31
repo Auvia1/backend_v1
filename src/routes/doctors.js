@@ -278,6 +278,39 @@ router.post("/:id/time-off", async (req, res) => {
   }
 });
 
+// ─── PATCH /api/doctors/:id/time-off/:timeoff_id — update time off ────────
+router.patch("/:id/time-off/:timeoff_id", async (req, res) => {
+  try {
+    const { id, timeoff_id } = req.params;
+    const { start_time, end_time, reason } = req.body;
+
+    const updates = [];
+    const values = [];
+    let paramCount = 1;
+
+    if (start_time !== undefined) { updates.push(`start_time = $${paramCount++}`); values.push(start_time); }
+    if (end_time !== undefined) { updates.push(`end_time = $${paramCount++}`); values.push(end_time); }
+    if (reason !== undefined) { updates.push(`reason = $${paramCount++}`); values.push(reason); }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ success: false, error: "No fields to update" });
+    }
+
+    values.push(timeoff_id);
+    values.push(id);
+    const query = `UPDATE doctor_time_off SET ${updates.join(", ")} WHERE id = $${paramCount++} AND doctor_id = $${paramCount} RETURNING *`;
+    const result = await pool.query(query, values);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Time off not found" });
+    }
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ─── DELETE /api/doctors/:id/time-off/:timeoff_id — delete time off ────────
 router.delete("/:id/time-off/:timeoff_id", async (req, res) => {
   try {
@@ -294,6 +327,151 @@ router.delete("/:id/time-off/:timeoff_id", async (req, res) => {
 
     res.json({ success: true, message: "Time off deleted successfully", data: result.rows[0] });
   } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// DOCTOR APPOINTMENTS
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─── GET /api/doctors/:id/appointments — fetch all appointments for a doctor ─
+// Query params:
+//   clinic_id (required) — the clinic context
+//   status (optional) — filter by status: pending, confirmed, completed, cancelled, no_show, rescheduled
+//   start_date (optional) — ISO date YYYY-MM-DD to filter from
+//   end_date (optional) — ISO date YYYY-MM-DD to filter until
+//   patient_id (optional) — filter by specific patient
+//   page (optional) — pagination (default: 1)
+//   limit (optional) — items per page (default: 20)
+router.get("/:id/appointments", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { clinic_id, status, start_date, end_date, patient_id, page = 1, limit = 20 } = req.query;
+
+    if (!clinic_id) {
+      return res.status(400).json({ success: false, error: "clinic_id query param required" });
+    }
+
+    // ── Build dynamic query ────────────────────────────────────────────────────
+    let query = `
+      SELECT
+        a.id,
+        a.clinic_id,
+        a.patient_id,
+        a.doctor_id,
+        a.appointment_start,
+        a.appointment_end,
+        a.reason,
+        a.notes,
+        a.status,
+        a.source,
+        a.payment_status,
+        a.payment_amount,
+        a.created_at,
+        a.updated_at,
+        pt.name AS patient_name,
+        pt.phone AS patient_phone,
+        pt.email AS patient_email,
+        d.name AS doctor_name,
+        d.speciality
+      FROM appointments a
+      JOIN patients pt ON a.patient_id = pt.id
+      JOIN doctors d ON a.doctor_id = d.id
+      WHERE a.doctor_id = $1
+        AND a.clinic_id = $2
+        AND a.deleted_at IS NULL
+    `;
+
+    const params = [id, clinic_id];
+    let paramIdx = 3;
+
+    // Filter by status if provided
+    if (status) {
+      const allowed = ["pending", "confirmed", "completed", "cancelled", "no_show", "rescheduled"];
+      if (!allowed.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid status. Allowed: ${allowed.join(", ")}`,
+        });
+      }
+      query += ` AND a.status = $${paramIdx++}`;
+      params.push(status);
+    }
+
+    // Filter by date range if provided
+    if (start_date) {
+      query += ` AND DATE(a.appointment_start AT TIME ZONE 'Asia/Kolkata') >= $${paramIdx++}`;
+      params.push(start_date);
+    }
+
+    if (end_date) {
+      query += ` AND DATE(a.appointment_start AT TIME ZONE 'Asia/Kolkata') <= $${paramIdx++}`;
+      params.push(end_date);
+    }
+
+    // Filter by patient if provided
+    if (patient_id) {
+      query += ` AND a.patient_id = $${paramIdx++}`;
+      params.push(patient_id);
+    }
+
+    // Order by appointment_start descending (most recent first)
+    query += ` ORDER BY a.appointment_start DESC`;
+
+    // ── Calculate pagination ────────────────────────────────────────────────────
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    query += ` LIMIT $${paramIdx++} OFFSET $${paramIdx++}`;
+    params.push(parseInt(limit), offset);
+
+    // ── Execute query ──────────────────────────────────────────────────────────
+    const result = await pool.query(query, params);
+
+    // ── Get total count for pagination ──────────────────────────────────────────
+    let countQuery = `
+      SELECT COUNT(*) FROM appointments a
+      WHERE a.doctor_id = $1
+        AND a.clinic_id = $2
+        AND a.deleted_at IS NULL
+    `;
+    const countParams = [id, clinic_id];
+    let countParamIdx = 3;
+
+    if (status) {
+      countQuery += ` AND a.status = $${countParamIdx++}`;
+      countParams.push(status);
+    }
+
+    if (start_date) {
+      countQuery += ` AND DATE(a.appointment_start AT TIME ZONE 'Asia/Kolkata') >= $${countParamIdx++}`;
+      countParams.push(start_date);
+    }
+
+    if (end_date) {
+      countQuery += ` AND DATE(a.appointment_start AT TIME ZONE 'Asia/Kolkata') <= $${countParamIdx++}`;
+      countParams.push(end_date);
+    }
+
+    if (patient_id) {
+      countQuery += ` AND a.patient_id = $${countParamIdx++}`;
+      countParams.push(patient_id);
+    }
+
+    const countResult = await pool.query(countQuery, countParams);
+    const totalCount = parseInt(countResult.rows[0].count);
+
+    res.json({
+      success: true,
+      data: result.rows,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / parseInt(limit)),
+      },
+    });
+  } catch (err) {
+    console.error("Doctor appointments fetch error:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
