@@ -239,6 +239,86 @@ router.post("/", async (req, res) => {
   }
 });
 
+// ─── POST /api/calls/bulk — create multiple call records ───────────────────
+router.post("/bulk", async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const { calls } = req.body;
+
+    if (!Array.isArray(calls) || calls.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "calls array is required and must not be empty",
+      });
+    }
+
+    if (calls.length > 100) {
+      return res.status(400).json({
+        success: false,
+        error: "Maximum 100 calls can be created at once",
+      });
+    }
+
+    await client.query("BEGIN");
+
+    const createdCalls = [];
+
+    for (const call of calls) {
+      const { type, caller, agent_type = "ai", duration = 0, ai_summary, recording } = call;
+
+      // Validate required fields
+      if (!type || !caller) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          success: false,
+          error: "Each call must have type and caller",
+        });
+      }
+
+      const allowed_types = ["incoming", "outgoing"];
+      if (!allowed_types.includes(type)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          success: false,
+          error: `Invalid type. Allowed: ${allowed_types.join(", ")}`,
+        });
+      }
+
+      const allowed_agents = ["ai", "human"];
+      if (!allowed_agents.includes(agent_type)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          success: false,
+          error: `Invalid agent_type. Allowed: ${allowed_agents.join(", ")}`,
+        });
+      }
+
+      const result = await client.query(
+        `INSERT INTO calls (clinic_id, type, caller, agent_type, duration, ai_summary, recording)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, clinic_id, time, type, caller, agent_type, duration, ai_summary, recording, created_at`,
+        [req.clinic_id, type, caller, agent_type, duration, ai_summary || null, recording || null]
+      );
+
+      createdCalls.push(result.rows[0]);
+    }
+
+    await client.query("COMMIT");
+
+    res.status(201).json({
+      success: true,
+      message: `${createdCalls.length} call(s) created successfully`,
+      data: createdCalls,
+    });
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    console.error("Bulk call creation error:", err);
+    res.status(400).json({ success: false, error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // ─── PATCH /api/calls/:id — update call details ────────────────────────────
 router.patch("/:id", async (req, res) => {
   try {
