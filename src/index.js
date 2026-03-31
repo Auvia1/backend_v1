@@ -50,6 +50,7 @@ app.use("/api/contracts",    require("./routes/contracts"));
 app.use("/api/phone-numbers", require("./routes/phone-numbers"));
 app.use("/api/analytics", require("./routes/analytics"));
 app.use("/api/payments", require("./routes/payments"));
+app.use("/api/calls", require("./routes/calls"));
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/api/health", async (req, res) => {
@@ -84,5 +85,6 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`   Contracts → http://0.0.0.0:${PORT}/api/contracts/<clinic_id>`);
   console.log(`   Analytics → http://0.0.0.0:${PORT}/api/analytics/dashboard`);
   console.log(`   Payments  → http://0.0.0.0:${PORT}/api/payments?clinic_id=<id> (GET)`);
+  console.log(`   Calls     → http://0.0.0.0:${PORT}/api/calls?clinic_id=<id> (GET)`);
   console.log(`   Doctor Appointments → http://0.0.0.0:${PORT}/api/doctors/:id/appointments?clinic_id=<id>\n`);
 });
