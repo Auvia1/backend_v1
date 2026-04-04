@@ -515,6 +515,10 @@ router.get("/:id", async (req, res) => {
 //   appointment_start (ISO), appointment_end (ISO)
 // Optional:
 //   reason, source ("manual" | "agent"), created_by (UUID)
+//
+// BOOKING MODEL (based on clinic_settings.is_slots_needed):
+//   • is_slots_needed = TRUE  → Slot-based booking (prevent double-booking with FOR UPDATE lock)
+//   • is_slots_needed = FALSE → Token-based booking (allow multiple appointments, assign token_number)
 router.post("/", async (req, res) => {
   const client = await pool.connect();
   try {
@@ -560,22 +564,50 @@ router.post("/", async (req, res) => {
     );
     const patient_id = patientResult.rows[0].id;
 
-    // ── Check for slot conflict — UNIQUE(doctor_id, appointment_start) ────────
-    const conflict = await client.query(
-      `SELECT id FROM appointments
-       WHERE doctor_id         = $1
-         AND appointment_start = $2
-         AND status NOT IN ('cancelled', 'rescheduled')
-         AND deleted_at IS NULL
-       FOR UPDATE`,
-      [doctor_id, appointment_start]
+    // ── Check clinic settings: is_slots_needed (true=slot-based, false=token-based) ───
+    const settingsResult = await client.query(
+      `SELECT is_slots_needed FROM clinic_settings WHERE clinic_id = $1`,
+      [clinic_id]
     );
+    const is_slots_needed = settingsResult.rows[0]?.is_slots_needed ?? false;
 
-    if (conflict.rows.length > 0) {
-      await client.query("ROLLBACK");
-      return res
-        .status(409)
-        .json({ success: false, error: "This time slot is already booked." });
+    let token_number = null;
+
+    // ── Step A: If SLOT-BASED (is_slots_needed = true) ──────────────────────────────
+    // Check for slot conflict — UNIQUE(doctor_id, appointment_start)
+    // Prevent double-booking using FOR UPDATE lock
+    if (is_slots_needed === true) {
+      const conflict = await client.query(
+        `SELECT id FROM appointments
+         WHERE doctor_id         = $1
+           AND appointment_start = $2
+           AND status NOT IN ('cancelled', 'rescheduled')
+           AND deleted_at IS NULL
+         FOR UPDATE`,
+        [doctor_id, appointment_start]
+      );
+
+      if (conflict.rows.length > 0) {
+        await client.query("ROLLBACK");
+        return res
+          .status(409)
+          .json({ success: false, error: "This time slot is already booked." });
+      }
+    }
+    // ── Step B: If TOKEN-BASED (is_slots_needed = false) ────────────────────────────
+    // Allow multiple appointments at same time, assign next available token number
+    else {
+      const tokenResult = await client.query(
+        `SELECT MAX(token_number) as max_token FROM appointments
+         WHERE doctor_id = $1
+           AND DATE(appointment_start AT TIME ZONE 'Asia/Kolkata') = DATE($2 AT TIME ZONE 'Asia/Kolkata')
+           AND status NOT IN ('cancelled', 'rescheduled')
+           AND deleted_at IS NULL`,
+        [doctor_id, appointment_start]
+      );
+
+      const maxToken = tokenResult.rows[0]?.max_token || 0;
+      token_number = maxToken + 1;
     }
 
     // ── Check doctor time-off (TIMESTAMPTZ range overlap) ────────────────────
@@ -599,13 +631,13 @@ router.post("/", async (req, res) => {
       `INSERT INTO appointments
          (clinic_id, patient_id, doctor_id,
           appointment_start, appointment_end,
-          reason, status, source, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, 'confirmed', $7, $8)
+          reason, status, source, created_by, token_number)
+       VALUES ($1, $2, $3, $4, $5, $6, 'confirmed', $7, $8, $9)
        RETURNING *`,
       [
         clinic_id, patient_id, doctor_id,
         appointment_start, appointment_end,
-        reason, source, created_by,
+        reason, source, created_by, token_number,
       ]
     );
 
@@ -620,10 +652,11 @@ router.post("/", async (req, res) => {
 
     // Distinguish receptionist manual bookings from AI-agent bookings
     const isAgent = source === "agent";
+    const bookingModel = is_slots_needed ? "slot-based" : "token-based";
     await logActivity(
       clinic_id,
       isAgent ? "agent_booking" : "manual_booking",
-      `${isAgent ? "Agent" : "Receptionist"} booked ${patient_name} with Dr. ${doctorName}`,
+      `${isAgent ? "Agent" : "Receptionist"} booked ${patient_name} with Dr. ${doctorName} (${bookingModel})`,
       {
         appointment_id:    apptResult.rows[0].id,
         appointment_start,
@@ -631,6 +664,8 @@ router.post("/", async (req, res) => {
         doctor_id,
         patient_id,
         reason: reason || null,
+        booking_model: bookingModel,
+        token_number: token_number,
       }
     );
 
