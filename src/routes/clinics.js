@@ -754,4 +754,29 @@ router.get("/admin/all", async (req, res) => {
   }
 });
 
+// ─── GET /api/clinics/:id/is-slots-needed ────────────────────────────────
+// Fetch whether clinic uses slot-based booking (true) or token-based (false)
+router.get("/:id/is-slots-needed", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `SELECT is_slots_needed FROM clinic_settings WHERE clinic_id = $1`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Clinic settings not found" });
+    }
+
+    res.json({
+      success: true,
+      clinic_id: id,
+      is_slots_needed: result.rows[0].is_slots_needed
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 module.exports = router;
