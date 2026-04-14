@@ -462,7 +462,8 @@ router.patch("/:id/settings", async (req, res) => {
       ai_agent_languages,
       whatsapp_number,
       logo_url,
-      price_per_appointment
+      price_per_appointment,
+      is_slots_needed
     } = req.body;
 
     // Check if clinic exists
@@ -487,8 +488,9 @@ router.patch("/:id/settings", async (req, res) => {
          ai_agent_languages = COALESCE($6, ai_agent_languages),
          whatsapp_number = COALESCE($7, whatsapp_number),
          logo_url = COALESCE($8, logo_url),
-         price_per_appointment = COALESCE($9, price_per_appointment)
-       WHERE clinic_id = $10
+         price_per_appointment = COALESCE($9, price_per_appointment),
+         is_slots_needed = COALESCE($10, is_slots_needed)
+       WHERE clinic_id = $11
        RETURNING *`,
       [
         advance_booking_days,
@@ -500,6 +502,7 @@ router.patch("/:id/settings", async (req, res) => {
         whatsapp_number,
         logo_url,
         price_per_appointment,
+        is_slots_needed,
         req.params.id
       ]
     );
