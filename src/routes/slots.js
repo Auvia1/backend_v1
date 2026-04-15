@@ -26,25 +26,46 @@ function authenticateToken(req, res, next) {
 
 router.use(authenticateToken);
 
-// ─── POST /api/slots — Create a new slot ──────────────────────────────────────
-// Required: doctor_id, slot_start, slot_end, max_appointments_per_slot, clinic_id
-// Optional: status (default: 'open')
+// ─── Helper: Validate time format (HH:MM:SS) ──────────────────────────────
+function isValidTimeFormat(timeStr) {
+  const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/;
+  return timeRegex.test(timeStr);
+}
+
+// ─── Helper: Validate date format (YYYY-MM-DD) ─────────────────────────────
+function isValidDateFormat(dateStr) {
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateRegex.test(dateStr)) return false;
+  return !isNaN(Date.parse(dateStr));
+}
+
+// ─── Helper: Compare times (as strings HH:MM:SS) ────────────────────────────
+function isTimeAfter(time1, time2) {
+  return time1 > time2; // String comparison works for HH:MM:SS format
+}
+
+// ─── POST /api/slots — Create a new recurring slot ─────────────────────────
+// Required: clinic_id, doctor_id, day_of_week, start_time, end_time, max_appointments_per_slot
+// Optional: status (default: 'open'), effective_from, effective_to
 router.post("/", async (req, res) => {
   try {
     const {
       clinic_id,
       doctor_id,
-      slot_start,
-      slot_end,
+      day_of_week,
+      start_time,
+      end_time,
       max_appointments_per_slot,
       status = "open",
+      effective_from,
+      effective_to,
     } = req.body;
 
     // ── Validate required fields ────────────────────────────────────────────
-    if (!clinic_id || !doctor_id || !slot_start || !slot_end || !max_appointments_per_slot) {
+    if (!clinic_id || !doctor_id || day_of_week === undefined || day_of_week === null || !start_time || !end_time || !max_appointments_per_slot) {
       return res.status(400).json({
         success: false,
-        error: "Missing required fields: clinic_id, doctor_id, slot_start, slot_end, max_appointments_per_slot",
+        error: "Missing required fields: clinic_id, doctor_id, day_of_week, start_time, end_time, max_appointments_per_slot",
       });
     }
 
@@ -53,21 +74,34 @@ router.post("/", async (req, res) => {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
 
-    // ── Validate slot times ────────────────────────────────────────────────
-    const startTime = new Date(slot_start);
-    const endTime = new Date(slot_end);
-
-    if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
+    // ── Validate day_of_week (0-6: Sunday-Saturday) ────────────────────────
+    if (!Number.isInteger(day_of_week) || day_of_week < 0 || day_of_week > 6) {
       return res.status(400).json({
         success: false,
-        error: "Invalid date format. Use ISO 8601 format (e.g., 2026-04-15T09:00:00Z)",
+        error: "day_of_week must be an integer between 0 (Sunday) and 6 (Saturday)",
       });
     }
 
-    if (endTime <= startTime) {
+    // ── Validate time format ────────────────────────────────────────────────
+    if (!isValidTimeFormat(start_time)) {
       return res.status(400).json({
         success: false,
-        error: "slot_end must be after slot_start",
+        error: "start_time must be in HH:MM:SS format (e.g., 09:00:00)",
+      });
+    }
+
+    if (!isValidTimeFormat(end_time)) {
+      return res.status(400).json({
+        success: false,
+        error: "end_time must be in HH:MM:SS format (e.g., 10:00:00)",
+      });
+    }
+
+    // ── Validate times comparison ──────────────────────────────────────────
+    if (!isTimeAfter(end_time, start_time)) {
+      return res.status(400).json({
+        success: false,
+        error: "end_time must be after start_time",
       });
     }
 
@@ -88,6 +122,31 @@ router.post("/", async (req, res) => {
       });
     }
 
+    // ── Validate date format if provided ───────────────────────────────────
+    if (effective_from && !isValidDateFormat(effective_from)) {
+      return res.status(400).json({
+        success: false,
+        error: "effective_from must be in YYYY-MM-DD format",
+      });
+    }
+
+    if (effective_to && !isValidDateFormat(effective_to)) {
+      return res.status(400).json({
+        success: false,
+        error: "effective_to must be in YYYY-MM-DD format",
+      });
+    }
+
+    // ── Validate date range ────────────────────────────────────────────────
+    if (effective_from && effective_to) {
+      if (new Date(effective_to) < new Date(effective_from)) {
+        return res.status(400).json({
+          success: false,
+          error: "effective_to must be after or equal to effective_from",
+        });
+      }
+    }
+
     // ── Verify doctor exists in clinic ──────────────────────────────────────
     const doctorCheck = await pool.query(
       "SELECT id FROM doctors WHERE id = $1 AND clinic_id = $2 AND deleted_at IS NULL",
@@ -104,10 +163,10 @@ router.post("/", async (req, res) => {
     // ── Insert slot ────────────────────────────────────────────────────────
     const result = await pool.query(
       `INSERT INTO slots_for_token_system
-       (clinic_id, doctor_id, slot_start, slot_end, max_appointments_per_slot, status)
-       VALUES ($1, $2, $3, $4, $5, $6)
+       (clinic_id, doctor_id, day_of_week, start_time, end_time, max_appointments_per_slot, status, effective_from, effective_to)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [clinic_id, doctor_id, slot_start, slot_end, max_appointments_per_slot, status]
+      [clinic_id, doctor_id, day_of_week, start_time, end_time, max_appointments_per_slot, status, effective_from || new Date().toISOString().split('T')[0], effective_to]
     );
 
     res.status(201).json({
@@ -121,13 +180,14 @@ router.post("/", async (req, res) => {
   }
 });
 
-// ─── GET /api/slots — List slots with filters ──────────────────────────────────
+// ─── GET /api/slots — List slots with filters ──────────────────────────────
 // Query params:
 //   clinic_id (required)
 //   doctor_id (optional)
+//   day_of_week (optional): 0-6
 //   status (optional): open, full, closed, cancelled
-//   start_date (optional): ISO date to filter slots from
-//   end_date (optional): ISO date to filter slots until
+//   effective_from (optional): YYYY-MM-DD
+//   effective_to (optional): YYYY-MM-DD
 //   page (optional, default: 1)
 //   limit (optional, default: 20)
 router.get("/", async (req, res) => {
@@ -135,9 +195,10 @@ router.get("/", async (req, res) => {
     const {
       clinic_id,
       doctor_id,
+      day_of_week,
       status,
-      start_date,
-      end_date,
+      effective_from,
+      effective_to,
       page = 1,
       limit = 20,
     } = req.query;
@@ -162,15 +223,13 @@ router.get("/", async (req, res) => {
         s.doctor_id,
         d.name AS doctor_name,
         d.speciality,
-        s.slot_start,
-        s.slot_end,
+        s.day_of_week,
+        s.start_time,
+        s.end_time,
         s.max_appointments_per_slot,
         s.status,
-        (SELECT COUNT(*) FROM appointments WHERE appointments.clinic_id = s.clinic_id
-         AND appointments.doctor_id = s.doctor_id
-         AND appointments.appointment_start >= s.slot_start
-         AND appointments.appointment_end <= s.slot_end
-         AND appointments.deleted_at IS NULL) AS appointments_count,
+        s.effective_from,
+        s.effective_to,
         s.created_at,
         s.updated_at
       FROM slots_for_token_system s
@@ -188,6 +247,19 @@ router.get("/", async (req, res) => {
       params.push(doctor_id);
     }
 
+    // ── Filter by day_of_week ──────────────────────────────────────────────
+    if (day_of_week !== undefined && day_of_week !== null && day_of_week !== "") {
+      const dow = parseInt(day_of_week);
+      if (isNaN(dow) || dow < 0 || dow > 6) {
+        return res.status(400).json({
+          success: false,
+          error: "day_of_week must be between 0 (Sunday) and 6 (Saturday)",
+        });
+      }
+      query += ` AND s.day_of_week = $${paramIdx++}`;
+      params.push(dow);
+    }
+
     // ── Filter by status ────────────────────────────────────────────────────
     if (status) {
       const validStatuses = ["open", "full", "closed", "cancelled"];
@@ -201,19 +273,31 @@ router.get("/", async (req, res) => {
       params.push(status);
     }
 
-    // ── Filter by date range ────────────────────────────────────────────────
-    if (start_date) {
-      query += ` AND s.slot_start >= $${paramIdx++}`;
-      params.push(start_date);
+    // ── Filter by effective date range ─────────────────────────────────────
+    if (effective_from) {
+      if (!isValidDateFormat(effective_from)) {
+        return res.status(400).json({
+          success: false,
+          error: "effective_from must be in YYYY-MM-DD format",
+        });
+      }
+      query += ` AND (s.effective_to IS NULL OR s.effective_to >= $${paramIdx++})`;
+      params.push(effective_from);
     }
 
-    if (end_date) {
-      query += ` AND s.slot_end <= $${paramIdx++}`;
-      params.push(end_date);
+    if (effective_to) {
+      if (!isValidDateFormat(effective_to)) {
+        return res.status(400).json({
+          success: false,
+          error: "effective_to must be in YYYY-MM-DD format",
+        });
+      }
+      query += ` AND s.effective_from <= $${paramIdx++}`;
+      params.push(effective_to);
     }
 
-    // ── Order by slot_start ────────────────────────────────────────────────
-    query += ` ORDER BY s.slot_start ASC`;
+    // ── Order by day_of_week and start_time ────────────────────────────────
+    query += ` ORDER BY s.day_of_week ASC, s.start_time ASC`;
 
     // ── Pagination ──────────────────────────────────────────────────────────
     const pageNum = Math.max(1, parseInt(page) || 1);
@@ -238,19 +322,24 @@ router.get("/", async (req, res) => {
       countParams.push(doctor_id);
     }
 
+    if (day_of_week !== undefined && day_of_week !== null && day_of_week !== "") {
+      countQuery += ` AND day_of_week = $${countParamIdx++}`;
+      countParams.push(parseInt(day_of_week));
+    }
+
     if (status) {
       countQuery += ` AND status = $${countParamIdx++}`;
       countParams.push(status);
     }
 
-    if (start_date) {
-      countQuery += ` AND slot_start >= $${countParamIdx++}`;
-      countParams.push(start_date);
+    if (effective_from) {
+      countQuery += ` AND (effective_to IS NULL OR effective_to >= $${countParamIdx++})`;
+      countParams.push(effective_from);
     }
 
-    if (end_date) {
-      countQuery += ` AND slot_end <= $${countParamIdx++}`;
-      countParams.push(end_date);
+    if (effective_to) {
+      countQuery += ` AND effective_from <= $${countParamIdx++}`;
+      countParams.push(effective_to);
     }
 
     const countResult = await pool.query(countQuery, countParams);
@@ -273,7 +362,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-// ─── GET /api/slots/:id — Get single slot ──────────────────────────────────────
+// ─── GET /api/slots/:id — Get single slot ──────────────────────────────────
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -281,13 +370,7 @@ router.get("/:id", async (req, res) => {
     const result = await pool.query(
       `SELECT s.*,
               d.name AS doctor_name,
-              d.speciality,
-              (SELECT COUNT(*) FROM appointments
-               WHERE clinic_id = s.clinic_id
-               AND doctor_id = s.doctor_id
-               AND appointment_start >= s.slot_start
-               AND appointment_end <= s.slot_end
-               AND deleted_at IS NULL) AS appointments_count
+              d.speciality
        FROM slots_for_token_system s
        LEFT JOIN doctors d ON s.doctor_id = d.id
        WHERE s.id = $1 AND s.deleted_at IS NULL`,
@@ -318,12 +401,13 @@ router.get("/:id", async (req, res) => {
   }
 });
 
-// ─── PATCH /api/slots/:id — Update slot ────────────────────────────────────────
-// Updatable fields: slot_start, slot_end, max_appointments_per_slot, status (clinic_id & doctor_id cannot be changed)
+// ─── PATCH /api/slots/:id — Update slot ────────────────────────────────────
+// Updatable fields: day_of_week, start_time, end_time, max_appointments_per_slot, status, effective_from, effective_to
+// (clinic_id & doctor_id cannot be changed)
 router.patch("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { slot_start, slot_end, max_appointments_per_slot, status } = req.body;
+    const { day_of_week, start_time, end_time, max_appointments_per_slot, status, effective_from, effective_to } = req.body;
 
     // ── Get existing slot ────────────────────────────────────────────────────
     const existing = await pool.query(
@@ -350,28 +434,37 @@ router.patch("/:id", async (req, res) => {
     let updateIdx = 1;
     const params = [];
 
-    if (slot_start !== undefined) {
-      const startTime = new Date(slot_start);
-      if (isNaN(startTime.getTime())) {
+    if (day_of_week !== undefined) {
+      if (!Number.isInteger(day_of_week) || day_of_week < 0 || day_of_week > 6) {
         return res.status(400).json({
           success: false,
-          error: "Invalid slot_start format",
+          error: "day_of_week must be an integer between 0 (Sunday) and 6 (Saturday)",
         });
       }
-      updates.slot_start = `$${updateIdx++}`;
-      params.push(slot_start);
+      updates.day_of_week = `$${updateIdx++}`;
+      params.push(day_of_week);
     }
 
-    if (slot_end !== undefined) {
-      const endTime = new Date(slot_end);
-      if (isNaN(endTime.getTime())) {
+    if (start_time !== undefined) {
+      if (!isValidTimeFormat(start_time)) {
         return res.status(400).json({
           success: false,
-          error: "Invalid slot_end format",
+          error: "start_time must be in HH:MM:SS format",
         });
       }
-      updates.slot_end = `$${updateIdx++}`;
-      params.push(slot_end);
+      updates.start_time = `$${updateIdx++}`;
+      params.push(start_time);
+    }
+
+    if (end_time !== undefined) {
+      if (!isValidTimeFormat(end_time)) {
+        return res.status(400).json({
+          success: false,
+          error: "end_time must be in HH:MM:SS format",
+        });
+      }
+      updates.end_time = `$${updateIdx++}`;
+      params.push(end_time);
     }
 
     if (max_appointments_per_slot !== undefined) {
@@ -397,6 +490,28 @@ router.patch("/:id", async (req, res) => {
       params.push(status);
     }
 
+    if (effective_from !== undefined) {
+      if (!isValidDateFormat(effective_from)) {
+        return res.status(400).json({
+          success: false,
+          error: "effective_from must be in YYYY-MM-DD format",
+        });
+      }
+      updates.effective_from = `$${updateIdx++}`;
+      params.push(effective_from);
+    }
+
+    if (effective_to !== undefined) {
+      if (effective_to && !isValidDateFormat(effective_to)) {
+        return res.status(400).json({
+          success: false,
+          error: "effective_to must be in YYYY-MM-DD format",
+        });
+      }
+      updates.effective_to = `$${updateIdx++}`;
+      params.push(effective_to || null);
+    }
+
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({
         success: false,
@@ -405,13 +520,24 @@ router.patch("/:id", async (req, res) => {
     }
 
     // ── Validate time logic if both are being updated ───────────────────────
-    const finalStartTime = slot_start || slot.slot_start;
-    const finalEndTime = slot_end || slot.slot_end;
+    const finalStartTime = start_time || slot.start_time;
+    const finalEndTime = end_time || slot.end_time;
 
-    if (new Date(finalEndTime) <= new Date(finalStartTime)) {
+    if (!isTimeAfter(finalEndTime, finalStartTime)) {
       return res.status(400).json({
         success: false,
-        error: "slot_end must be after slot_start",
+        error: "end_time must be after start_time",
+      });
+    }
+
+    // ── Validate date range if both dates are present ───────────────────────
+    const finalEffectiveFrom = effective_from || slot.effective_from;
+    const finalEffectiveTo = effective_to !== undefined ? effective_to : slot.effective_to;
+
+    if (finalEffectiveFrom && finalEffectiveTo && new Date(finalEffectiveTo) < new Date(finalEffectiveFrom)) {
+      return res.status(400).json({
+        success: false,
+        error: "effective_to must be after or equal to effective_from",
       });
     }
 
@@ -441,7 +567,7 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
-// ─── DELETE /api/slots/:id — Soft delete slot ──────────────────────────────────
+// ─── DELETE /api/slots/:id — Soft delete slot ──────────────────────────────
 router.delete("/:id", async (req, res) => {
   try {
     const { id } = req.params;

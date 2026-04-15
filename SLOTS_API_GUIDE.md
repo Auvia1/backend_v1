@@ -1,18 +1,19 @@
-# Slots for Token System - API Documentation
+# Slots for Token System - API Documentation (UPDATED)
 
-**Last Updated**: April 15, 2026
+**Last Updated**: April 15, 2026 (Revised)
 **Table**: `slots_for_token_system`
 
 ---
 
 ## Overview
 
-This API manages appointment slots for clinics using a token-based appointment system. Each slot represents a time window during which a doctor can see patients. Slots are useful for:
+This API manages recurring appointment slots for clinics using a token-based appointment system. Unlike time-specific slots, these are **recurring weekly schedules** that define when a doctor is available.
 
-- Organizing patient flow in token-based systems
-- Limiting appointments per time slot
-- Managing doctor availability
-- Overseeing clinic operations
+**Key Changes**:
+- Slots now represent recurring weekly patterns (e.g., "every Monday 09:00-10:00")
+- Uses `day_of_week`, `start_time`, and `end_time` instead of specific timestamps
+- Supports effective date ranges for schedule changes
+- Similar to `doctor_schedule` table structure
 
 ---
 
@@ -40,17 +41,20 @@ The JWT token contains `clinic_id` which is verified against the requested clini
 
 ---
 
-## Table Schema
+## Table Schema (Updated)
 
 ```sql
 CREATE TABLE public.slots_for_token_system (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     clinic_id uuid NOT NULL,
     doctor_id uuid NOT NULL,
-    slot_start timestamp with time zone NOT NULL,
-    slot_end timestamp with time zone NOT NULL,
+    day_of_week integer NOT NULL,
+    start_time time without time zone NOT NULL,
+    end_time time without time zone NOT NULL,
     max_appointments_per_slot integer NOT NULL DEFAULT 1,
     status character varying(20) DEFAULT 'open' NOT NULL,
+    effective_from date DEFAULT CURRENT_DATE,
+    effective_to date,
     deleted_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
@@ -64,13 +68,30 @@ CREATE TABLE public.slots_for_token_system (
 | `id` | UUID | Primary key | Auto-generated |
 | `clinic_id` | UUID | Which clinic owns this slot | FK to `clinics.id`, not updatable |
 | `doctor_id` | UUID | Which doctor this slot belongs to | FK to `doctors.id`, not updatable |
-| `slot_start` | Timestamp | When the slot starts | Must be before `slot_end` |
-| `slot_end` | Timestamp | When the slot ends | Must be after `slot_start` |
-| `max_appointments_per_slot` | Integer | Max appointments allowed in this slot | Must be > 0 |
+| `day_of_week` | Integer | Day of week (0=Sunday, 6=Saturday) | 0-6, NOT NULL |
+| `start_time` | Time | When slot starts daily | HH:MM:SS format, NOT NULL |
+| `end_time` | Time | When slot ends daily | HH:MM:SS format, must be > start_time |
+| `max_appointments_per_slot` | Integer | Max appointments allowed per slot | Must be > 0, NOT NULL |
 | `status` | String | Current slot status | `open`, `full`, `closed`, or `cancelled` |
+| `effective_from` | Date | Schedule effective start | YYYY-MM-DD format, default: today |
+| `effective_to` | Date | Schedule effective end | YYYY-MM-DD format, nullable |
 | `deleted_at` | Timestamp | Soft delete timestamp | NULL if active |
 | `created_at` | Timestamp | When slot was created | Auto-set |
 | `updated_at` | Timestamp | When slot was last updated | Auto-updated by trigger |
+
+---
+
+## Day of Week Reference
+
+| Value | Day |
+|-------|-----|
+| 0 | Sunday |
+| 1 | Monday |
+| 2 | Tuesday |
+| 3 | Wednesday |
+| 4 | Thursday |
+| 5 | Friday |
+| 6 | Saturday |
 
 ---
 
@@ -80,7 +101,7 @@ CREATE TABLE public.slots_for_token_system (
 
 **Endpoint**: `POST /api/slots`
 
-**Description**: Create a new appointment slot.
+**Description**: Create a new recurring appointment slot.
 
 #### Request Headers
 
@@ -93,30 +114,36 @@ Content-Type: application/json
 
 ```json
 {
-  "clinic_id": "uuid",
-  "doctor_id": "uuid",
-  "slot_start": "2026-04-20T09:00:00Z",
-  "slot_end": "2026-04-20T10:00:00Z",
+  "clinic_id": "c1d1-4d2c-a1b1-000000000001",
+  "doctor_id": "d1d1-4d2c-a1b1-000000000001",
+  "day_of_week": 1,
+  "start_time": "09:00:00",
+  "end_time": "10:00:00",
   "max_appointments_per_slot": 5,
-  "status": "open"
+  "status": "open",
+  "effective_from": "2026-04-20",
+  "effective_to": "2026-06-30"
 }
 ```
 
 #### Required Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `clinic_id` | UUID | Your clinic ID (must match JWT token) |
-| `doctor_id` | UUID | Doctor ID (must exist in clinic) |
-| `slot_start` | ISO 8601 Timestamp | Slot start time |
-| `slot_end` | ISO 8601 Timestamp | Slot end time |
-| `max_appointments_per_slot` | Integer | Max appointments (must be > 0) |
+| Field | Type | Description | Format |
+|-------|------|-------------|--------|
+| `clinic_id` | UUID | Your clinic ID (must match JWT token) | UUID |
+| `doctor_id` | UUID | Doctor ID (must exist in clinic) | UUID |
+| `day_of_week` | Integer | Day of week | 0-6 (0=Sunday) |
+| `start_time` | String | Slot start time (daily) | HH:MM:SS |
+| `end_time` | String | Slot end time (daily) | HH:MM:SS |
+| `max_appointments_per_slot` | Integer | Max appointments in slot | Integer > 0 |
 
 #### Optional Fields
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `status` | String | `open` | Slot status (`open`, `full`, `closed`, `cancelled`) |
+| `effective_from` | Date | Today | Schedule start date (YYYY-MM-DD) |
+| `effective_to` | Date | NULL | Schedule end date (YYYY-MM-DD) |
 
 #### Response - Success (201)
 
@@ -128,10 +155,13 @@ Content-Type: application/json
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "clinic_id": "c1d1-4d2c-a1b1-000000000001",
     "doctor_id": "d1d1-4d2c-a1b1-000000000001",
-    "slot_start": "2026-04-20T09:00:00+00:00",
-    "slot_end": "2026-04-20T10:00:00+00:00",
+    "day_of_week": 1,
+    "start_time": "09:00:00",
+    "end_time": "10:00:00",
     "max_appointments_per_slot": 5,
     "status": "open",
+    "effective_from": "2026-04-20",
+    "effective_to": "2026-06-30",
     "deleted_at": null,
     "created_at": "2026-04-15T10:30:00+00:00",
     "updated_at": "2026-04-15T10:30:00+00:00"
@@ -145,15 +175,23 @@ Content-Type: application/json
 ```json
 {
   "success": false,
-  "error": "Missing required fields: clinic_id, doctor_id, slot_start, slot_end, max_appointments_per_slot"
+  "error": "Missing required fields: clinic_id, doctor_id, day_of_week, start_time, end_time, max_appointments_per_slot"
 }
 ```
 
-**400 - Invalid Date Format**
+**400 - Invalid day_of_week**
 ```json
 {
   "success": false,
-  "error": "Invalid date format. Use ISO 8601 format (e.g., 2026-04-15T09:00:00Z)"
+  "error": "day_of_week must be an integer between 0 (Sunday) and 6 (Saturday)"
+}
+```
+
+**400 - Invalid Time Format**
+```json
+{
+  "success": false,
+  "error": "start_time must be in HH:MM:SS format (e.g., 09:00:00)"
 }
 ```
 
@@ -161,15 +199,7 @@ Content-Type: application/json
 ```json
 {
   "success": false,
-  "error": "slot_end must be after slot_start"
-}
-```
-
-**400 - Invalid max_appointments_per_slot**
-```json
-{
-  "success": false,
-  "error": "max_appointments_per_slot must be a positive integer"
+  "error": "end_time must be after start_time"
 }
 ```
 
@@ -198,10 +228,12 @@ curl -X POST http://localhost:3000/api/slots \
   -d '{
     "clinic_id": "c1d1-4d2c-a1b1-000000000001",
     "doctor_id": "d1d1-4d2c-a1b1-000000000001",
-    "slot_start": "2026-04-20T09:00:00Z",
-    "slot_end": "2026-04-20T10:00:00Z",
+    "day_of_week": 1,
+    "start_time": "09:00:00",
+    "end_time": "10:00:00",
     "max_appointments_per_slot": 5,
-    "status": "open"
+    "status": "open",
+    "effective_from": "2026-04-20"
   }'
 ```
 
@@ -211,7 +243,7 @@ curl -X POST http://localhost:3000/api/slots \
 
 **Endpoint**: `GET /api/slots`
 
-**Description**: Fetch all slots for a clinic with optional filters.
+**Description**: Fetch all recurring slots for a clinic with optional filters.
 
 #### Query Parameters
 
@@ -219,9 +251,10 @@ curl -X POST http://localhost:3000/api/slots \
 |-----------|------|----------|---------|-------------|
 | `clinic_id` | UUID | ✓ | - | Your clinic ID |
 | `doctor_id` | UUID | | | Filter slots by doctor |
+| `day_of_week` | Integer | | | Filter by day: 0-6 |
 | `status` | String | | | Filter by status: `open`, `full`, `closed`, `cancelled` |
-| `start_date` | ISO Date | | | Filter slots created from this date (e.g., `2026-04-15T00:00:00Z`) |
-| `end_date` | ISO Date | | | Filter slots created until this date (e.g., `2026-04-30T23:59:59Z`) |
+| `effective_from` | Date | | | Filter: slots effective from this date (YYYY-MM-DD) |
+| `effective_to` | Date | | | Filter: slots effective until this date (YYYY-MM-DD) |
 | `page` | Integer | | `1` | Page number for pagination |
 | `limit` | Integer | | `20` | Items per page (max: 100) |
 
@@ -237,11 +270,13 @@ curl -X POST http://localhost:3000/api/slots \
       "doctor_id": "d1d1-4d2c-a1b1-000000000001",
       "doctor_name": "Dr. Rajesh Kumar",
       "speciality": "Cardiology",
-      "slot_start": "2026-04-20T09:00:00+00:00",
-      "slot_end": "2026-04-20T10:00:00+00:00",
+      "day_of_week": 1,
+      "start_time": "09:00:00",
+      "end_time": "10:00:00",
       "max_appointments_per_slot": 5,
       "status": "open",
-      "appointments_count": 3,
+      "effective_from": "2026-04-20",
+      "effective_to": "2026-06-30",
       "created_at": "2026-04-15T10:30:00+00:00",
       "updated_at": "2026-04-15T10:30:00+00:00"
     },
@@ -251,11 +286,13 @@ curl -X POST http://localhost:3000/api/slots \
       "doctor_id": "d1d1-4d2c-a1b1-000000000001",
       "doctor_name": "Dr. Rajesh Kumar",
       "speciality": "Cardiology",
-      "slot_start": "2026-04-20T10:00:00+00:00",
-      "slot_end": "2026-04-20T11:00:00+00:00",
-      "max_appointments_per_slot": 5,
-      "status": "full",
-      "appointments_count": 5,
+      "day_of_week": 1,
+      "start_time": "10:00:00",
+      "end_time": "11:00:00",
+      "max_appointments_per_slot": 4,
+      "status": "open",
+      "effective_from": "2026-04-20",
+      "effective_to": null,
       "created_at": "2026-04-15T10:30:00+00:00",
       "updated_at": "2026-04-15T10:30:00+00:00"
     }
@@ -276,13 +313,15 @@ curl -X POST http://localhost:3000/api/slots \
 | `id` | UUID | Slot ID |
 | `clinic_id` | UUID | Clinic ID |
 | `doctor_id` | UUID | Doctor ID |
-| `doctor_name` | String | Doctor's name (from doctors table) |
-| `speciality` | String | Doctor's speciality (from doctors table) |
-| `slot_start` | Timestamp | Slot start time |
-| `slot_end` | Timestamp | Slot end time |
+| `doctor_name` | String | Doctor's name |
+| `speciality` | String | Doctor's speciality |
+| `day_of_week` | Integer | Day of week (0-6) |
+| `start_time` | String | Daily start time (HH:MM:SS) |
+| `end_time` | String | Daily end time (HH:MM:SS) |
 | `max_appointments_per_slot` | Integer | Max appointments allowed |
 | `status` | String | Current slot status |
-| `appointments_count` | Integer | Actual number of appointments in this slot |
+| `effective_from` | Date | Schedule effective from |
+| `effective_to` | Date | Schedule effective until (nullable) |
 | `created_at` | Timestamp | Creation timestamp |
 | `updated_at` | Timestamp | Last update timestamp |
 
@@ -296,11 +335,11 @@ curl -X POST http://localhost:3000/api/slots \
 }
 ```
 
-**400 - Invalid Status**
+**400 - Invalid day_of_week**
 ```json
 {
   "success": false,
-  "error": "status must be one of: open, full, closed, cancelled"
+  "error": "day_of_week must be between 0 (Sunday) and 6 (Saturday)"
 }
 ```
 
@@ -315,12 +354,16 @@ curl -X POST http://localhost:3000/api/slots \
 #### Example cURL
 
 ```bash
-# Get all open slots for a doctor
-curl -X GET "http://localhost:3000/api/slots?clinic_id=c1d1-4d2c-a1b1-000000000001&doctor_id=d1d1-4d2c-a1b1-000000000001&status=open&page=1&limit=10" \
+# Get all slots for a specific doctor on Monday
+curl -X GET "http://localhost:3000/api/slots?clinic_id=c1d1-4d2c-a1b1-000000000001&doctor_id=d1d1-4d2c-a1b1-000000000001&day_of_week=1" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 
-# Get slots for a date range
-curl -X GET "http://localhost:3000/api/slots?clinic_id=c1d1-4d2c-a1b1-000000000001&start_date=2026-04-20T00:00:00Z&end_date=2026-04-30T23:59:59Z" \
+# Get all open slots for a date range
+curl -X GET "http://localhost:3000/api/slots?clinic_id=c1d1-4d2c-a1b1-000000000001&status=open&effective_from=2026-04-20&effective_to=2026-06-30" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN"
+
+# Get all slots with pagination
+curl -X GET "http://localhost:3000/api/slots?clinic_id=c1d1-4d2c-a1b1-000000000001&page=1&limit=10" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN"
 ```
 
@@ -349,11 +392,13 @@ curl -X GET "http://localhost:3000/api/slots?clinic_id=c1d1-4d2c-a1b1-0000000000
     "doctor_id": "d1d1-4d2c-a1b1-000000000001",
     "doctor_name": "Dr. Rajesh Kumar",
     "speciality": "Cardiology",
-    "slot_start": "2026-04-20T09:00:00+00:00",
-    "slot_end": "2026-04-20T10:00:00+00:00",
+    "day_of_week": 1,
+    "start_time": "09:00:00",
+    "end_time": "10:00:00",
     "max_appointments_per_slot": 5,
     "status": "open",
-    "appointments_count": 3,
+    "effective_from": "2026-04-20",
+    "effective_to": "2026-06-30",
     "created_at": "2026-04-15T10:30:00+00:00",
     "updated_at": "2026-04-15T10:30:00+00:00",
     "deleted_at": null
@@ -392,7 +437,7 @@ curl -X GET "http://localhost:3000/api/slots/550e8400-e29b-41d4-a716-44665544000
 
 **Endpoint**: `PATCH /api/slots/:id`
 
-**Description**: Update an existing slot. Only `slot_start`, `slot_end`, `max_appointments_per_slot`, and `status` can be modified.
+**Description**: Update an existing recurring slot. Only certain fields can be modified.
 
 #### Path Parameter
 
@@ -404,10 +449,12 @@ curl -X GET "http://localhost:3000/api/slots/550e8400-e29b-41d4-a716-44665544000
 
 ```json
 {
-  "slot_start": "2026-04-20T09:30:00Z",
-  "slot_end": "2026-04-20T10:30:00Z",
+  "day_of_week": 2,
+  "start_time": "10:00:00",
+  "end_time": "11:00:00",
   "max_appointments_per_slot": 6,
-  "status": "closed"
+  "status": "closed",
+  "effective_to": "2026-05-31"
 }
 ```
 
@@ -415,10 +462,13 @@ curl -X GET "http://localhost:3000/api/slots/550e8400-e29b-41d4-a716-44665544000
 
 | Field | Type | Constraints |
 |-------|------|-----------|
-| `slot_start` | ISO 8601 Timestamp | Must be before `slot_end` |
-| `slot_end` | ISO 8601 Timestamp | Must be after `slot_start` |
+| `day_of_week` | Integer | Must be 0-6 |
+| `start_time` | String | HH:MM:SS format, must be before end_time |
+| `end_time` | String | HH:MM:SS format, must be after start_time |
 | `max_appointments_per_slot` | Integer | Must be > 0 |
 | `status` | String | Must be `open`, `full`, `closed`, or `cancelled` |
+| `effective_from` | Date | YYYY-MM-DD format |
+| `effective_to` | Date | YYYY-MM-DD format, must be >= effective_from |
 
 **Note**: `clinic_id` and `doctor_id` cannot be changed once created.
 
@@ -432,10 +482,13 @@ curl -X GET "http://localhost:3000/api/slots/550e8400-e29b-41d4-a716-44665544000
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "clinic_id": "c1d1-4d2c-a1b1-000000000001",
     "doctor_id": "d1d1-4d2c-a1b1-000000000001",
-    "slot_start": "2026-04-20T09:30:00+00:00",
-    "slot_end": "2026-04-20T10:30:00+00:00",
+    "day_of_week": 2,
+    "start_time": "10:00:00",
+    "end_time": "11:00:00",
     "max_appointments_per_slot": 6,
     "status": "closed",
+    "effective_from": "2026-04-20",
+    "effective_to": "2026-05-31",
     "deleted_at": null,
     "created_at": "2026-04-15T10:30:00+00:00",
     "updated_at": "2026-04-15T11:00:00+00:00"
@@ -457,7 +510,7 @@ curl -X GET "http://localhost:3000/api/slots/550e8400-e29b-41d4-a716-44665544000
 ```json
 {
   "success": false,
-  "error": "slot_end must be after slot_start"
+  "error": "end_time must be after start_time"
 }
 ```
 
@@ -480,12 +533,30 @@ curl -X GET "http://localhost:3000/api/slots/550e8400-e29b-41d4-a716-44665544000
 #### Example cURL
 
 ```bash
+# Update status to closed
 curl -X PATCH "http://localhost:3000/api/slots/550e8400-e29b-41d4-a716-446655440000" \
   -H "Authorization: Bearer YOUR_JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "status": "closed",
+    "status": "closed"
+  }'
+
+# Update time and capacity
+curl -X PATCH "http://localhost:3000/api/slots/550e8400-e29b-41d4-a716-446655440000" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start_time": "10:30:00",
+    "end_time": "11:30:00",
     "max_appointments_per_slot": 6
+  }'
+
+# Set schedule end date
+curl -X PATCH "http://localhost:3000/api/slots/550e8400-e29b-41d4-a716-446655440000" \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "effective_to": "2026-05-31"
   }'
 ```
 
@@ -513,10 +584,13 @@ curl -X PATCH "http://localhost:3000/api/slots/550e8400-e29b-41d4-a716-446655440
     "id": "550e8400-e29b-41d4-a716-446655440000",
     "clinic_id": "c1d1-4d2c-a1b1-000000000001",
     "doctor_id": "d1d1-4d2c-a1b1-000000000001",
-    "slot_start": "2026-04-20T09:00:00+00:00",
-    "slot_end": "2026-04-20T10:00:00+00:00",
+    "day_of_week": 1,
+    "start_time": "09:00:00",
+    "end_time": "10:00:00",
     "max_appointments_per_slot": 5,
     "status": "open",
+    "effective_from": "2026-04-20",
+    "effective_to": "2026-06-30",
     "deleted_at": "2026-04-15T11:15:00+00:00",
     "created_at": "2026-04-15T10:30:00+00:00",
     "updated_at": "2026-04-15T11:15:00+00:00"
@@ -564,41 +638,63 @@ curl -X DELETE "http://localhost:3000/api/slots/550e8400-e29b-41d4-a716-44665544
 
 ## Workflow Examples
 
-### Example 1: Create Morning Slots for a Doctor
+### Example 1: Create Morning Slots for a Doctor (Monday-Friday)
 
-**Scenario**: Create 5 one-hour slots (09:00-14:00) with max 4 appointments each.
+Create 5 one-hour slots (09:00-14:00) for each weekday with max 4 appointments:
 
 ```bash
-# Slot 1: 09:00 - 10:00
+# Monday 09:00-10:00
 curl -X POST http://localhost:3000/api/slots \
   -H "Authorization: Bearer TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "clinic_id": "clinic-123",
     "doctor_id": "doctor-456",
-    "slot_start": "2026-04-20T09:00:00Z",
-    "slot_end": "2026-04-20T10:00:00Z",
-    "max_appointments_per_slot": 4
+    "day_of_week": 1,
+    "start_time": "09:00:00",
+    "end_time": "10:00:00",
+    "max_appointments_per_slot": 4,
+    "effective_from": "2026-04-20"
   }'
 
-# Slot 2: 10:00 - 11:00
+# Monday 10:00-11:00
 curl -X POST http://localhost:3000/api/slots \
   -H "Authorization: Bearer TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "clinic_id": "clinic-123",
     "doctor_id": "doctor-456",
-    "slot_start": "2026-04-20T10:00:00Z",
-    "slot_end": "2026-04-20T11:00:00Z",
-    "max_appointments_per_slot": 4
+    "day_of_week": 1,
+    "start_time": "10:00:00",
+    "end_time": "11:00:00",
+    "max_appointments_per_slot": 4,
+    "effective_from": "2026-04-20"
   }'
 
-# ... repeat for remaining slots
+# ... repeat for remaining slots and days
 ```
 
-### Example 2: Mark Slot as Full When Capacity Reached
+### Example 2: Get All Monday Slots
 
-When the 4 appointments are booked in a slot, update it to `full`:
+```bash
+curl -X GET "http://localhost:3000/api/slots?clinic_id=clinic-123&doctor_id=doctor-456&day_of_week=1&status=open" \
+  -H "Authorization: Bearer TOKEN"
+```
+
+### Example 3: Update Slot Schedule End Date
+
+When a doctor goes on leave after May 31:
+
+```bash
+curl -X PATCH http://localhost:3000/api/slots/slot-id-123 \
+  -H "Authorization: Bearer TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "effective_to": "2026-05-31"
+  }'
+```
+
+### Example 4: Change Slot Status When Fully Booked
 
 ```bash
 curl -X PATCH http://localhost:3000/api/slots/slot-id-123 \
@@ -609,21 +705,15 @@ curl -X PATCH http://localhost:3000/api/slots/slot-id-123 \
   }'
 ```
 
-### Example 3: Get All Available Slots for a Doctor
-
-```bash
-curl -X GET "http://localhost:3000/api/slots?clinic_id=clinic-123&doctor_id=doctor-456&status=open&page=1&limit=50" \
-  -H "Authorization: Bearer TOKEN"
-```
-
-### Example 4: Close a Slot Due to Doctor Emergency
+### Example 5: Update Time Due to Schedule Change
 
 ```bash
 curl -X PATCH http://localhost:3000/api/slots/slot-id-123 \
   -H "Authorization: Bearer TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "status": "closed"
+    "start_time": "09:30:00",
+    "end_time": "10:30:00"
   }'
 ```
 
@@ -634,47 +724,98 @@ curl -X PATCH http://localhost:3000/api/slots/slot-id-123 \
 ### With Appointments Table
 
 When creating an appointment:
-1. Check if a slot exists for the doctor and time range
-2. Verify `appointments_count < max_appointments_per_slot`
-3. Create the appointment
-4. If count reaches max, optionally update slot status to `full`
+1. Determine target appointment date
+2. Calculate day_of_week from the appointment date
+3. Find matching slots (clinic → doctor → day_of_week)
+4. Check if count of appointments in that slot < max_appointments_per_slot
+5. Create appointment
+6. Optionally update slot status to `full` if max capacity reached
 
-### Slot Status Auto-Management
+### With Doctor Schedule
 
-You may want to implement logic to automatically:
-- Set status to `full` when `appointments_count == max_appointments_per_slot`
-- Set status to `open` when an appointment is cancelled and count < max
+- Slots complement `doctor_schedule` table
+- `doctor_schedule`: stores `slot_duration_minutes` and optional `max_appointments_per_slot`
+- `slots_for_token_system`: recurring slots with max capacity
+- Use whichever fits your booking model better, or combine both
 
-### Time Zone Handling
+### Date Range Logic
 
-- All timestamps are stored in UTC (with time zone)
-- Specify times as ISO 8601 format: `2026-04-20T09:00:00Z`
-- The API will handle timezone conversion
+**Example**:
+- Doctor available: April 20 - June 30, 2026
+- Create slot with `effective_from: "2026-04-20"` and `effective_to: "2026-06-30"`
+- Slot appears in queries during this period only
+- After June 30, slot is logically "inactive" but data preserved
+
+---
+
+## Time Format Reference
+
+### Start/End Time Format
+```
+HH:MM:SS
+- HH: 00-23 (24-hour format)
+- MM: 00-59
+- SS: 00-59
+
+Examples:
+- 09:00:00 (9:00 AM)
+- 14:30:00 (2:30 PM)
+- 23:59:59 (11:59:59 PM)
+```
+
+### Date Format
+```
+YYYY-MM-DD
+
+Examples:
+- 2026-04-20 (April 20, 2026)
+- 2026-12-31 (December 31, 2026)
+```
 
 ---
 
 ## Error Codes Summary
 
-| Code | Meaning |
-|------|---------|
-| `200` | Success (GET, PATCH, DELETE) |
-| `201` | Created (POST) |
-| `400` | Bad Request (missing fields, invalid data) |
-| `401` | Unauthorized (missing or invalid token) |
-| `403` | Forbidden (clinic_id mismatch) |
-| `404` | Not Found (slot or doctor not found) |
-| `500` | Internal Server Error |
+| Code | Meaning | Info |
+|------|---------|------|
+| `200` | Success | GET, PATCH, DELETE success |
+| `201` | Created | POST success |
+| `400` | Bad Request | Invalid data, missing fields, format errors |
+| `401` | Unauthorized | Missing or invalid JWT token |
+| `403` | Forbidden | clinic_id mismatch |
+| `404` | Not Found | Slot or doctor not found |
+| `500` | Server Error | Database or unexpected error |
+
+---
+
+## Validation Rules
+
+| Field | Validation |
+|-------|-----------|
+| `clinic_id` | Valid UUID, must match JWT token |
+| `doctor_id` | Valid UUID, must exist in clinic |
+| `day_of_week` | Integer 0-6 (inclusive) |
+| `start_time` | HH:MM:SS format, valid time |
+| `end_time` | HH:MM:SS format, must be > start_time |
+| `max_appointments_per_slot` | Positive integer > 0 |
+| `status` | One of: open, full, closed, cancelled |
+| `effective_from` | YYYY-MM-DD format, valid date |
+| `effective_to` | YYYY-MM-DD format, >= effective_from (or null) |
+| `page` | Integer >= 1 |
+| `limit` | Integer 1-100 |
 
 ---
 
 ## Best Practices
 
-1. **Time Zone**: Always use UTC timestamps in ISO 8601 format
-2. **Pagination**: Use pagination for large result sets (default limit: 20, max: 100)
-3. **Status Management**: Update slot status based on appointment count
-4. **Soft Deletes**: Deleted slots are preserved for audit trails
-5. **Doctor Verification**: System validates that doctor belongs to clinic
-6. **Clinic Isolation**: JWT token ensures clinic data isolation
+1. **Time Format**: Always use 24-hour HH:MM:SS format (no AM/PM)
+2. **Date Format**: Always use YYYY-MM-DD (ISO 8601)
+3. **Day of Week**: Use 0-6 values, not day names
+4. **Effective Dates**: Leave `effective_to` null for indefinite schedules
+5. **Status Management**: Update status based on appointment booking
+6. **Soft Deletes**: Deleted slots preserve audit trail
+7. **Doctor Verification**: System validates doctor belongs to clinic
+8. **Clinic Isolation**: JWT ensures clinic data isolation
 
 ---
 
@@ -682,14 +823,19 @@ You may want to implement logic to automatically:
 
 ### Request Fields
 
-| Field | Type | Required | Max Length | Pattern |
-|-------|------|----------|-----------|---------|
-| `clinic_id` | UUID | POST | - | UUID v4 |
-| `doctor_id` | UUID | POST | - | UUID v4 |
-| `slot_start` | Timestamp | POST, PATCH | - | ISO 8601 |
-| `slot_end` | Timestamp | POST, PATCH | - | ISO 8601 |
-| `max_appointments_per_slot` | Integer | POST, PATCH | - | > 0 |
-| `status` | String | POST, PATCH | 20 | `open\|full\|closed\|cancelled` |
+| Field | Type | Required | Format | Validation |
+|-------|------|----------|--------|-----------|
+| `clinic_id` | UUID | POST | UUID | Must match JWT |
+| `doctor_id` | UUID | POST | UUID | Must exist in clinic |
+| `day_of_week` | Integer | POST, PATCH | 0-6 | Range check |
+| `start_time` | String | POST, PATCH | HH:MM:SS | Format + before end_time |
+| `end_time` | String | POST, PATCH | HH:MM:SS | Format + after start_time |
+| `max_appointments_per_slot` | Integer | POST, PATCH | Positive int | > 0 |
+| `status` | String | POST, PATCH | String | Enum: open/full/closed/cancelled |
+| `effective_from` | Date | POST, PATCH | YYYY-MM-DD | Valid date |
+| `effective_to` | Date | POST, PATCH | YYYY-MM-DD | >= effective_from or null |
+| `page` | Integer | GET | Integer | >= 1 |
+| `limit` | Integer | GET | Integer | 1-100 |
 
 ### Response Fields
 
@@ -698,11 +844,12 @@ You may want to implement logic to automatically:
 | `success` | Boolean | All | Operation success status |
 | `message` | String | POST, PATCH, DELETE | Operation message |
 | `error` | String | Error responses | Error description |
-| `data` | Object | Success responses | Response data |
+| `data` | Object | Success responses | Response data (slot or array) |
 | `pagination` | Object | GET (list) | Pagination metadata |
 
 ---
 
-**Version**: 1.0
+**Version**: 2.0 (Updated)
 **Last Updated**: April 15, 2026
 **Status**: LIVE ✓
+**Database Schema Version**: slots_for_token_system (recurring weekly slots)
