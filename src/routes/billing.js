@@ -101,15 +101,6 @@ router.post("/", async (req, res) => {
       `INSERT INTO clinic_billing
        (clinic_id, plan, billing_cycle, payment_method, card_last4, card_name, card_expiry, gst_number, monthly_amount)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-       ON CONFLICT (clinic_id) DO UPDATE SET
-         plan = EXCLUDED.plan,
-         billing_cycle = EXCLUDED.billing_cycle,
-         payment_method = EXCLUDED.payment_method,
-         card_last4 = EXCLUDED.card_last4,
-         card_name = EXCLUDED.card_name,
-         card_expiry = EXCLUDED.card_expiry,
-         gst_number = EXCLUDED.gst_number,
-         monthly_amount = EXCLUDED.monthly_amount
        RETURNING id, clinic_id, plan, billing_cycle, payment_method, card_last4, card_name, card_expiry, gst_number, monthly_amount`,
       [clinic_id, normalizedPlan, normalizedBillingCycle, normalizedPaymentMethod, card_last4, card_name, card_expiry, gst_number, monthly_amount]
     );

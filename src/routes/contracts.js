@@ -47,11 +47,6 @@ router.post("/", async (req, res) => {
     const { rows } = await pool.query(
       `INSERT INTO clinic_contracts (clinic_id, contract_start, contract_end, agreement)
        VALUES ($1, $2, $3, $4)
-       ON CONFLICT (clinic_id) DO UPDATE SET
-         contract_start = EXCLUDED.contract_start,
-         contract_end = EXCLUDED.contract_end,
-         agreement = EXCLUDED.agreement,
-         updated_at = NOW()
        RETURNING id, clinic_id, contract_start, contract_end, agreement, created_at, updated_at`,
       [clinic_id, contract_start, contract_end, agreement || false]
     );

@@ -148,8 +148,8 @@ CREATE TABLE appointments (
   created_at         TIMESTAMPTZ DEFAULT NOW(),
   updated_at         TIMESTAMPTZ DEFAULT NOW(),
 
-  UNIQUE(doctor_id, appointment_start),
-  
+  CONSTRAINT appointments_doctor_id_appointment_start_key UNIQUE(doctor_id, appointment_start),
+
   -- Time validity check
   CONSTRAINT chk_appointment_times CHECK (appointment_end > appointment_start)
 );
