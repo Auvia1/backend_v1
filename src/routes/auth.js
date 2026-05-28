@@ -50,7 +50,7 @@ router.post("/login", async (req, res) => {
          subscription_plan, subscription_status,
          username, password, deleted_at
        FROM clinics
-       WHERE username = $1 AND name ILIKE $2
+       WHERE username = $1 AND name = $2
        LIMIT 1`,
       [username.trim().toLowerCase(), clinicName.trim()]
     );
