@@ -35,12 +35,12 @@ function authenticateToken(req, res, next) {
 // ─── POST /api/auth/login ─────────────────────────────────────────────────────
 router.post("/login", async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, clinicName, password } = req.body;
 
-    if (!username || !password) {
+    if (!username || !clinicName || !password) {
       return res.status(400).json({
         success: false,
-        error: "username and password are required",
+        error: "clinicName, username, and password are required",
       });
     }
 
@@ -50,9 +50,9 @@ router.post("/login", async (req, res) => {
          subscription_plan, subscription_status,
          username, password, deleted_at
        FROM clinics
-       WHERE username = $1
+       WHERE username = $1 AND name ILIKE $2
        LIMIT 1`,
-      [username.trim().toLowerCase()]
+      [username.trim().toLowerCase(), clinicName.trim()]
     );
 
     if (rows.length === 0) {
