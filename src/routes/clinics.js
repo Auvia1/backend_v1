@@ -52,7 +52,7 @@ router.post("/register", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    const {
+    let {
       clinicName, clinicType, address, city, state, postal, phone, email,
       ownerName, ownerEmail, ownerPhone, ownerId,
       receptionistName, receptionistEmail, receptionistPhone, receptionistShift,
@@ -61,6 +61,12 @@ router.post("/register", async (req, res) => {
       username, password, latitude, longitude,
       documents = [],
     } = req.body;
+
+    // Sanitize phone numbers (remove spaces, hyphens, etc.)
+    if (phone) phone = phone.replace(/[^\d+]/g, '');
+    if (ownerPhone) ownerPhone = ownerPhone.replace(/[^\d+]/g, '');
+    if (receptionistPhone) receptionistPhone = receptionistPhone.replace(/[^\d+]/g, '');
+
 
     // Validate required fields
     if (!clinicName || !email || !phone) {
@@ -549,7 +555,9 @@ router.patch("/:id", async (req, res) => {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
 
-    const { name, email, phone, address, timezone } = req.body;
+    let { name, email, phone, address, timezone } = req.body;
+
+    if (phone) phone = phone.replace(/[^\d+]/g, '');
 
     const { rows } = await pool.query(
       `UPDATE clinics
