@@ -362,13 +362,13 @@ const { broadcast } = require("../activityBroadcaster");
 // ─── Helper: log to activity_log ──────────────────────────────────────────────
 // meta must be a plain JS object or null — we JSON.stringify before insert
 // because the schema column is JSONB.
-async function logActivity(clinic_id, event_type, title, meta = null) {
+async function logActivity(clinic_id, event_type, title, meta = null, entity_type = null, entity_id = null, user_id = null) {
   try {
     const { rows } = await pool.query(
-      `INSERT INTO activity_log (clinic_id, event_type, title, meta)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO activity_log (clinic_id, event_type, title, entity_type, entity_id, user_id, meta)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [clinic_id, event_type, title, meta ? JSON.stringify(meta) : null]
+      [clinic_id, event_type, title, entity_type, entity_id, user_id, meta ? JSON.stringify(meta) : null]
     );
     broadcast({ type: "activity", data: rows[0] });
   } catch (err) {
@@ -666,7 +666,10 @@ router.post("/", async (req, res) => {
         reason: reason || null,
         booking_model: bookingModel,
         token_number: token_number,
-      }
+      },
+      "appointment",
+      apptResult.rows[0].id,
+      created_by
     );
 
     res.status(201).json({ success: true, data: apptResult.rows[0] });
@@ -769,7 +772,10 @@ router.patch("/:id/status", async (req, res) => {
           appointment_id:    id,
           doctor_name:       detail.doctor_name,
           appointment_start: appt.appointment_start,
-        }
+        },
+        "appointment",
+        id,
+        cancelled_by
       );
     }
 

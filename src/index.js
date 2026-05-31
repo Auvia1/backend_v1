@@ -38,6 +38,7 @@ wss.on("connection", (ws) => {
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.use("/api/auth",         require("./routes/auth"));
+app.use("/api/adminlogin",   require("./routes/adminlogin"));
 app.use("/api/clinics",      require("./routes/clinics"));
 app.use("/api/users",        require("./routes/users"));
 app.use("/api/appointments", require("./routes/appointments"));
@@ -79,6 +80,7 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`   WebSocket → ws://0.0.0.0:${PORT}/ws/activity`);
   console.log(`   Health    → http://0.0.0.0:${PORT}/api/health`);
   console.log(`   Auth      → http://0.0.0.0:${PORT}/api/auth/login`);
+  console.log(`   Admin Auth→ http://0.0.0.0:${PORT}/api/adminlogin`);
   console.log(`   Clinic Reg → http://0.0.0.0:${PORT}/api/clinics/register (POST)`);
   console.log(`   Users     → http://0.0.0.0:${PORT}/api/users?clinic_id=<id>`);
   console.log(`   Billing   → http://0.0.0.0:${PORT}/api/billing/<clinic_id>`);

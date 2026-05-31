@@ -270,3 +270,23 @@ ADD COLUMN username VARCHAR(100) UNIQUE;
 -- Add password column (store hashed password, NOT plain text)
 ALTER TABLE clinics
 ADD COLUMN password TEXT;
+
+---
+
+-- 🔐 11. admin_login (Admin registration & approval)
+CREATE TABLE admin_login (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name              VARCHAR(255) NOT NULL CHECK (char_length(TRIM(name)) > 0),
+  email             VARCHAR(255) UNIQUE NOT NULL CHECK (email ~* '^[A-Za-z0-9._+%-]+@[A-Za-z0-9.-]+\.[A-Za-z]+$'),
+  phone             VARCHAR(20) CHECK (phone ~ '^[0-9]{10}$'),
+  password_hash     TEXT NOT NULL CHECK (char_length(password_hash) > 0),
+  approval_status   VARCHAR(20) DEFAULT 'pending' CHECK (approval_status IN ('pending', 'approved', 'rejected')),
+  approval_token    VARCHAR(255) UNIQUE,
+  is_active         BOOLEAN DEFAULT TRUE,
+  approved_at       TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_admin_login_email ON admin_login(email);
+CREATE INDEX idx_admin_login_approval_token ON admin_login(approval_token);

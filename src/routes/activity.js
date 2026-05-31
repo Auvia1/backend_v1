@@ -127,6 +127,9 @@ router.post("/", async (req, res) => {
   }
 
   try {
+    const cleanEntityId = entity_id || null;
+    const cleanUserId   = user_id || null;
+
     const { rows } = await pool.query(
       `INSERT INTO activity_log
          (clinic_id, event_type, title, entity_type, entity_id, user_id, meta)
@@ -136,9 +139,9 @@ router.post("/", async (req, res) => {
         clinic_id,
         event_type,
         title,
-        entity_type,
-        entity_id,
-        user_id,
+        entity_type || null,
+        cleanEntityId,
+        cleanUserId,
         // JSONB columns need the value serialised as a string when passed via
         // the pg driver — the driver does NOT auto-serialise plain objects.
         meta ? JSON.stringify(meta) : null,
