@@ -53,6 +53,10 @@ app.use("/api/analytics", require("./routes/analytics"));
 app.use("/api/payments", require("./routes/payments"));
 app.use("/api/calls", require("./routes/calls"));
 app.use("/api/slots", require("./routes/slots"));
+app.use("/api/credits",        require("./routes/credits"));
+app.use("/api/agent",           require("./routes/agent"));
+app.use("/api/admin",           require("./routes/admin"));
+app.use("/api/clinic/credits",  require("./routes/clinic-credits"));
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/api/health", async (req, res) => {
@@ -90,5 +94,9 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`   Payments  → http://0.0.0.0:${PORT}/api/payments?clinic_id=<id> (GET)`);
   console.log(`   Calls     → http://0.0.0.0:${PORT}/api/calls?clinic_id=<id> (GET)`);
   console.log(`   Slots     → http://0.0.0.0:${PORT}/api/slots?clinic_id=<id> (GET)`);
-  console.log(`   Doctor Appointments → http://0.0.0.0:${PORT}/api/doctors/:id/appointments?clinic_id=<id>\n`);
+  console.log(`   Doctor Appointments → http://0.0.0.0:${PORT}/api/doctors/:id/appointments?clinic_id=<id>`);
+  console.log(`   Credits   → http://0.0.0.0:${PORT}/api/credits/balance/<clinic_id>`);
+  console.log(`   Agent     → http://0.0.0.0:${PORT}/api/agent/check-credits (POST)`);
+  console.log(`   Admin     → http://0.0.0.0:${PORT}/api/admin/calls`);
+  console.log(`   Clinic Credits → http://0.0.0.0:${PORT}/api/clinic/credits/packages\n`);
 });
