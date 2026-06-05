@@ -160,7 +160,7 @@ router.post("/create-order", authenticateToken, async (req, res) => {
         id: "custom",
         name: `Custom Package (${credits} credits)`,
         credits: credits,
-        price_inr: credits * 1.0, // ₹1 per credit for custom packages
+        price_inr: credits * 5.0, // ₹5 per credit for custom packages
       };
     } else {
       // Fetch the credit package
@@ -215,7 +215,15 @@ router.post("/create-order", authenticateToken, async (req, res) => {
     });
   } catch (err) {
     console.error("Create order error:", err);
-    res.status(500).json({ success: false, error: err.message });
+    
+    let errorMsg = err.message;
+    if (!errorMsg && err.error && err.error.description) {
+      errorMsg = err.error.description;
+    } else if (!errorMsg) {
+      errorMsg = typeof err === 'string' ? err : JSON.stringify(err);
+    }
+    
+    res.status(500).json({ success: false, error: `Create order failed: ${errorMsg}` });
   }
 });
 

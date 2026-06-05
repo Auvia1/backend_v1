@@ -63,8 +63,8 @@ CREATE TABLE IF NOT EXISTS credit_packages (
 
 -- 6. Seed default credit packages
 INSERT INTO credit_packages (name, credits, price_inr) VALUES
-  ('Starter',    100,  99),
-  ('Growth',     500,  449),
-  ('Pro',        1000, 799),
-  ('Enterprise', 5000, 3499)
+  ('Starter',    100,  500),
+  ('Growth',     500,  2500),
+  ('Pro',        1000, 5000),
+  ('Enterprise', 5000, 25000)
 ON CONFLICT DO NOTHING;
