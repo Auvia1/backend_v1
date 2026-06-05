@@ -130,7 +130,7 @@ router.get("/calls", async (req, res) => {
     }
 
     // Count
-    const countQuery  = query.replace(/SELECT.*?FROM/, "SELECT COUNT(*) FROM");
+    const countQuery  = query.replace(/SELECT.*?FROM/s, "SELECT COUNT(*) FROM");
     const countResult = await pool.query(countQuery, params);
     const totalCount  = parseInt(countResult.rows[0].count);
 
@@ -309,7 +309,7 @@ router.get("/payments", async (req, res) => {
     }
 
     // Count
-    const countQuery  = query.replace(/SELECT.*?FROM/, "SELECT COUNT(*) FROM");
+    const countQuery  = query.replace(/SELECT.*?FROM/s, "SELECT COUNT(*) FROM");
     const countResult = await pool.query(countQuery, params);
     const totalCount  = parseInt(countResult.rows[0].count);
 
@@ -402,7 +402,7 @@ router.get("/recordings", async (req, res) => {
     }
 
     // Count
-    const countQuery  = query.replace(/SELECT.*?FROM/, "SELECT COUNT(*) FROM");
+    const countQuery  = query.replace(/SELECT.*?FROM/s, "SELECT COUNT(*) FROM");
     const countResult = await pool.query(countQuery, params);
     const totalCount  = parseInt(countResult.rows[0].count);
 
