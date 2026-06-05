@@ -6,10 +6,15 @@ const Razorpay = require("razorpay");
 const { authenticateToken, authenticateAdminToken, requireSuperAdmin } = require("../middleware");
 
 // ─── Razorpay instance ─────────────────────────────────────────────────────
-const razorpay = new Razorpay({
-  key_id:     process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET,
-});
+let razorpay;
+if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+  razorpay = new Razorpay({
+    key_id:     process.env.RAZORPAY_KEY_ID,
+    key_secret: process.env.RAZORPAY_KEY_SECRET,
+  });
+} else {
+  console.warn("RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is missing. Payment features will be disabled.");
+}
 
 // ─── GET /api/credits/balance/:clinic_id ────────────────────────────────────
 // Fetch current credit balance for a clinic
@@ -157,6 +162,10 @@ router.post("/create-order", authenticateToken, async (req, res) => {
 
     const pkg = packageResult.rows[0];
 
+    if (!razorpay) {
+      return res.status(500).json({ success: false, error: "Payment gateway is not configured" });
+    }
+
     // Create Razorpay order (amount in paise)
     const order = await razorpay.orders.create({
       amount:   Math.round(parseFloat(pkg.price_inr) * 100),
@@ -205,6 +214,10 @@ router.post("/verify-payment", authenticateToken, async (req, res) => {
         success: false,
         error: "razorpay_order_id, razorpay_payment_id, and razorpay_signature are required",
       });
+    }
+
+    if (!process.env.RAZORPAY_KEY_SECRET) {
+      return res.status(500).json({ success: false, error: "Payment gateway is not configured" });
     }
 
     // Verify signature
@@ -306,6 +319,10 @@ router.post("/webhook", express.raw({ type: "application/json" }), async (req, r
   const client = await pool.connect();
   try {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+
+    if (!webhookSecret) {
+      return res.status(500).json({ success: false, error: "Webhook secret is not configured" });
+    }
 
     // Verify webhook signature
     const receivedSignature = req.headers["x-razorpay-signature"];
