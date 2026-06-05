@@ -6,14 +6,15 @@ const Razorpay = require("razorpay");
 const { authenticateToken, authenticateAdminToken, requireSuperAdmin } = require("../middleware");
 
 // ─── Razorpay instance ─────────────────────────────────────────────────────
-let razorpay;
-if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
-  razorpay = new Razorpay({
-    key_id:     process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET,
-  });
-} else {
-  console.warn("RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is missing. Payment features will be disabled.");
+function getRazorpay() {
+  require("dotenv").config({ path: require("path").join(__dirname, "../../.env"), override: true });
+  if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+    return new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    });
+  }
+  return null;
 }
 
 // ─── GET /api/credits/balance/:clinic_id ────────────────────────────────────
@@ -134,12 +135,12 @@ router.post("/adjust", authenticateAdminToken, requireSuperAdmin, async (req, re
 // Create a Razorpay order and insert a pending credit_payments row
 router.post("/create-order", authenticateToken, async (req, res) => {
   try {
-    const { package_id, clinic_id } = req.body;
+    const { package_id, clinic_id, custom_credits } = req.body;
 
-    if (!package_id || !clinic_id) {
+    if ((!package_id && !custom_credits) || !clinic_id) {
       return res.status(400).json({
         success: false,
-        error: "package_id and clinic_id are required",
+        error: "package_id (or custom_credits) and clinic_id are required",
       });
     }
 
@@ -148,26 +149,42 @@ router.post("/create-order", authenticateToken, async (req, res) => {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
 
-    // Fetch the credit package
-    const packageResult = await pool.query(
-      `SELECT id, name, credits, price_inr
-       FROM credit_packages
-       WHERE id = $1 AND is_active = TRUE`,
-      [package_id]
-    );
+    let pkg;
 
-    if (packageResult.rows.length === 0) {
-      return res.status(404).json({ success: false, error: "Credit package not found or inactive" });
+    if (package_id === "custom" || custom_credits) {
+      const credits = parseInt(custom_credits, 10);
+      if (isNaN(credits) || credits <= 0) {
+        return res.status(400).json({ success: false, error: "Invalid custom_credits amount" });
+      }
+      pkg = {
+        id: "custom",
+        name: `Custom Package (${credits} credits)`,
+        credits: credits,
+        price_inr: credits * 1.0, // ₹1 per credit for custom packages
+      };
+    } else {
+      // Fetch the credit package
+      const packageResult = await pool.query(
+        `SELECT id, name, credits, price_inr
+         FROM credit_packages
+         WHERE id = $1 AND is_active = TRUE`,
+        [package_id]
+      );
+
+      if (packageResult.rows.length === 0) {
+        return res.status(404).json({ success: false, error: "Credit package not found or inactive" });
+      }
+
+      pkg = packageResult.rows[0];
     }
 
-    const pkg = packageResult.rows[0];
-
-    if (!razorpay) {
+    const rzp = getRazorpay();
+    if (!rzp) {
       return res.status(500).json({ success: false, error: "Payment gateway is not configured" });
     }
 
     // Create Razorpay order (amount in paise)
-    const order = await razorpay.orders.create({
+    const order = await rzp.orders.create({
       amount:   Math.round(parseFloat(pkg.price_inr) * 100),
       currency: "INR",
       receipt:  `credit_${clinic_id}_${Date.now()}`,
@@ -215,6 +232,8 @@ router.post("/verify-payment", authenticateToken, async (req, res) => {
         error: "razorpay_order_id, razorpay_payment_id, and razorpay_signature are required",
       });
     }
+
+    require("dotenv").config({ path: require("path").join(__dirname, "../../.env"), override: true });
 
     if (!process.env.RAZORPAY_KEY_SECRET) {
       return res.status(500).json({ success: false, error: "Payment gateway is not configured" });
@@ -318,6 +337,7 @@ router.post("/verify-payment", authenticateToken, async (req, res) => {
 router.post("/webhook", express.raw({ type: "application/json" }), async (req, res) => {
   const client = await pool.connect();
   try {
+    require("dotenv").config({ path: require("path").join(__dirname, "../../.env"), override: true });
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
 
     if (!webhookSecret) {
