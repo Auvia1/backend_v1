@@ -471,9 +471,9 @@ router.get("/transactions/:clinic_id", authenticateToken, async (req, res) => {
     }
 
     // Count query
-    const countQuery  = query.replace(/SELECT.*?FROM/, "SELECT COUNT(*) FROM");
+    const countQuery  = query.replace(/SELECT.*?FROM/, "SELECT COUNT(*) as count FROM");
     const countResult = await pool.query(countQuery, params);
-    const totalCount  = parseInt(countResult.rows[0].count);
+    const totalCount  = countResult.rows.length > 0 ? parseInt(countResult.rows[0].count) : 0;
 
     // Paginated results
     query += ` ORDER BY created_at DESC`;
