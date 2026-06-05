@@ -184,10 +184,11 @@ router.post("/create-order", authenticateToken, async (req, res) => {
     }
 
     // Create Razorpay order (amount in paise)
+    const shortClinicId = clinic_id.split('-')[0] || clinic_id.substring(0, 8);
     const order = await rzp.orders.create({
       amount:   Math.round(parseFloat(pkg.price_inr) * 100),
       currency: "INR",
-      receipt:  `credit_${clinic_id}_${Date.now()}`,
+      receipt:  `rcpt_${shortClinicId}_${Date.now()}`,
       notes: {
         clinic_id,
         package_id,
