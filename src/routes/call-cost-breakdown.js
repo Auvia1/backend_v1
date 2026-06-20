@@ -33,6 +33,36 @@ const SELECT_COLS = `
   updated_at
 `;
 
+const SELECT_WITH_CALLER_COLS = `
+  cb.id,
+  cb.call_id,
+  cb.clinic_id,
+  cb.duration_seconds,
+  cb.duration_minutes,
+  cb.stt_cost,
+  cb.stt_provider,
+  cb.tts_cost,
+  cb.tts_provider,
+  cb.tts_chars,
+  cb.llm_in_cost,
+  cb.llm_in_tokens,
+  cb.llm_out_cost,
+  cb.llm_out_tokens,
+  cb.telephony_cost,
+  cb.telephony_provider,
+  cb.whatsapp_cost,
+  cb.whatsapp_msg_type,
+  cb.other_cost,
+  cb.total_cost,
+  cb.cost_per_minute,
+  cb.credits_billed,
+  cb.balance_after,
+  cb.extra_costs,
+  cb.created_at,
+  cb.updated_at,
+  c.caller AS caller_phone
+`;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // CLINIC-SCOPED ROUTES  (require clinic JWT)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,17 +158,22 @@ router.get("/", authenticateToken, async (req, res) => {
   try {
     const { start_date, end_date, page = 1, limit = 20 } = req.query;
 
-    let query = `SELECT ${SELECT_COLS} FROM call_cost_breakdown WHERE clinic_id = $1`;
+    let query = `
+      SELECT ${SELECT_WITH_CALLER_COLS}
+      FROM call_cost_breakdown cb
+      LEFT JOIN calls c ON cb.call_id = c.id
+      WHERE cb.clinic_id = $1
+    `;
     const params = [req.clinic_id];
     let paramIdx = 2;
 
     if (start_date) {
-      query += ` AND DATE(created_at) >= $${paramIdx++}`;
+      query += ` AND DATE(cb.created_at) >= $${paramIdx++}`;
       params.push(start_date);
     }
 
     if (end_date) {
-      query += ` AND DATE(created_at) <= $${paramIdx++}`;
+      query += ` AND DATE(cb.created_at) <= $${paramIdx++}`;
       params.push(end_date);
     }
 
@@ -149,7 +184,7 @@ router.get("/", authenticateToken, async (req, res) => {
     );
     const totalCount = parseInt(countResult.rows[0].count);
 
-    query += ` ORDER BY created_at DESC`;
+    query += ` ORDER BY cb.created_at DESC`;
     const offset = (parseInt(page) - 1) * parseInt(limit);
     query += ` LIMIT $${paramIdx++} OFFSET $${paramIdx++}`;
     params.push(parseInt(limit), offset);
@@ -456,22 +491,27 @@ router.get("/admin/all", authenticateAdminToken, async (req, res) => {
   try {
     const { clinic_id, start_date, end_date, page = 1, limit = 20 } = req.query;
 
-    let query = `SELECT ${SELECT_COLS} FROM call_cost_breakdown WHERE 1=1`;
+    let query = `
+      SELECT ${SELECT_WITH_CALLER_COLS}
+      FROM call_cost_breakdown cb
+      LEFT JOIN calls c ON cb.call_id = c.id
+      WHERE 1=1
+    `;
     const params = [];
     let paramIdx = 1;
 
     if (clinic_id) {
-      query += ` AND clinic_id = $${paramIdx++}`;
+      query += ` AND cb.clinic_id = $${paramIdx++}`;
       params.push(clinic_id);
     }
 
     if (start_date) {
-      query += ` AND DATE(created_at) >= $${paramIdx++}`;
+      query += ` AND DATE(cb.created_at) >= $${paramIdx++}`;
       params.push(start_date);
     }
 
     if (end_date) {
-      query += ` AND DATE(created_at) <= $${paramIdx++}`;
+      query += ` AND DATE(cb.created_at) <= $${paramIdx++}`;
       params.push(end_date);
     }
 
@@ -481,7 +521,7 @@ router.get("/admin/all", authenticateAdminToken, async (req, res) => {
     );
     const totalCount = parseInt(countResult.rows[0].count);
 
-    query += ` ORDER BY created_at DESC`;
+    query += ` ORDER BY cb.created_at DESC`;
     const offset = (parseInt(page) - 1) * parseInt(limit);
     query += ` LIMIT $${paramIdx++} OFFSET $${paramIdx++}`;
     params.push(parseInt(limit), offset);
