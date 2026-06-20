@@ -57,6 +57,7 @@ app.use("/api/credits",        require("./routes/credits"));
 app.use("/api/agent",           require("./routes/agent"));
 app.use("/api/admin",           require("./routes/admin"));
 app.use("/api/clinic/credits",  require("./routes/clinic-credits"));
+app.use("/api/call-cost-breakdown", require("./routes/call-cost-breakdown"));
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/api/health", async (req, res) => {
@@ -98,5 +99,6 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`   Credits   → http://0.0.0.0:${PORT}/api/credits/balance/<clinic_id>`);
   console.log(`   Agent     → http://0.0.0.0:${PORT}/api/agent/check-credits (POST)`);
   console.log(`   Admin     → http://0.0.0.0:${PORT}/api/admin/calls`);
-  console.log(`   Clinic Credits → http://0.0.0.0:${PORT}/api/clinic/credits/packages\n`);
+  console.log(`   Clinic Credits → http://0.0.0.0:${PORT}/api/clinic/credits/packages`);
+  console.log(`   Call Cost      → http://0.0.0.0:${PORT}/api/call-cost-breakdown\n`);
 });

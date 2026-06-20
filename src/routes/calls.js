@@ -37,7 +37,7 @@ router.use(authenticateToken);
 //   limit (optional) — items per page (default: 20)
 router.get("/", async (req, res) => {
   try {
-    const { clinic_id, type, agent_type, start_date, end_date, page = 1, limit = 20 } = req.query;
+    const { clinic_id, type, agent_type, start_date, end_date, search, page = 1, limit = 20 } = req.query;
 
     // ── Verify clinic_id matches authenticated user's clinic ────────────────────
     if (!clinic_id) {
@@ -106,6 +106,11 @@ router.get("/", async (req, res) => {
       params.push(end_date);
     }
 
+    if (search) {
+      query += ` AND caller ILIKE $${paramIdx++}`;
+      params.push(`%${search}%`);
+    }
+
     // Order by time descending (most recent first)
     query += ` ORDER BY time DESC`;
 
@@ -140,6 +145,11 @@ router.get("/", async (req, res) => {
     if (end_date) {
       countQuery += ` AND DATE(time) <= $${countParamIdx++}`;
       countParams.push(end_date);
+    }
+
+    if (search) {
+      countQuery += ` AND caller ILIKE $${countParamIdx++}`;
+      countParams.push(`%${search}%`);
     }
 
     const countResult = await pool.query(countQuery, countParams);
