@@ -87,6 +87,7 @@ router.get("/clinic-summary", authenticateToken, async (req, res) => {
         COALESCE(SUM(credits_billed), 0) AS total_credits_billed,
         COALESCE(AVG(total_cost), 0)    AS avg_cost_per_call,
         COALESCE(AVG(duration_minutes), 0) AS avg_duration_minutes,
+        COALESCE(SUM(CEIL(duration_minutes)), 0) AS total_billed_duration_minutes,
         COALESCE(SUM(llm_in_tokens), 0)  AS total_llm_in_tokens,
         COALESCE(SUM(llm_out_tokens), 0) AS total_llm_out_tokens,
         COALESCE(SUM(tts_chars), 0)     AS total_tts_chars
@@ -527,6 +528,7 @@ router.get("/admin/summary", authenticateAdminToken, async (req, res) => {
         COALESCE(SUM(credits_billed), 0)  AS total_credits_billed,
         COALESCE(AVG(total_cost), 0)      AS avg_cost_per_call,
         COALESCE(AVG(duration_minutes), 0) AS avg_duration_minutes,
+        COALESCE(SUM(CEIL(duration_minutes)), 0) AS total_billed_duration_minutes,
         COALESCE(SUM(llm_in_tokens), 0)   AS total_llm_in_tokens,
         COALESCE(SUM(llm_out_tokens), 0)  AS total_llm_out_tokens,
         COALESCE(SUM(tts_chars), 0)       AS total_tts_chars
