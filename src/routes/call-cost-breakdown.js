@@ -29,6 +29,7 @@ const SELECT_COLS = `
   credits_billed,
   balance_after,
   extra_costs,
+  phone_number,
   created_at,
   updated_at
 `;
@@ -58,6 +59,7 @@ const SELECT_WITH_CALLER_COLS = `
   cb.credits_billed,
   cb.balance_after,
   cb.extra_costs,
+  cb.phone_number,
   cb.created_at,
   cb.updated_at,
   c.caller AS caller_phone
@@ -239,10 +241,20 @@ router.post("/", async (req, res) => {
       credits_billed,
       balance_after,
       extra_costs        = {},
+      phone_number,
     } = req.body;
 
     if (!call_id) {
       return res.status(400).json({ success: false, error: "call_id is required" });
+    }
+
+    // Resolve phone number if not provided
+    let resolved_phone_number = phone_number;
+    if (!resolved_phone_number) {
+      const callRes = await pool.query("SELECT caller FROM calls WHERE id = $1", [call_id]);
+      if (callRes.rows.length > 0) {
+        resolved_phone_number = callRes.rows[0].caller;
+      }
     }
 
     const result = await pool.query(
@@ -258,11 +270,11 @@ router.post("/", async (req, res) => {
          other_cost,
          cost_per_minute,
          credits_billed, balance_after,
-         extra_costs
+         extra_costs, phone_number
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9,
          $10, $11, $12, $13, $14, $15, $16, $17,
-         $18, $19, $20, $21, $22
+         $18, $19, $20, $21, $22, $23
        )
        RETURNING ${SELECT_COLS}`,
       [
@@ -279,6 +291,7 @@ router.post("/", async (req, res) => {
         credits_billed !== undefined ? credits_billed : null,
         balance_after  !== undefined ? balance_after  : null,
         JSON.stringify(extra_costs),
+        resolved_phone_number || null,
       ]
     );
 
@@ -314,6 +327,7 @@ router.patch("/:id", async (req, res) => {
       "cost_per_minute",
       "credits_billed", "balance_after",
       "extra_costs",
+      "phone_number",
     ];
 
     const updates = [];
@@ -378,7 +392,17 @@ router.patch("/by-call/:call_id", async (req, res) => {
       cost_per_minute,
       credits_billed, balance_after,
       extra_costs,
+      phone_number,
     } = req.body;
+
+    // Resolve phone number if not provided
+    let resolved_phone_number = phone_number;
+    if (!resolved_phone_number) {
+      const callRes = await pool.query("SELECT caller FROM calls WHERE id = $1", [call_id]);
+      if (callRes.rows.length > 0) {
+        resolved_phone_number = callRes.rows[0].caller;
+      }
+    }
 
     const result = await pool.query(
       `INSERT INTO call_cost_breakdown (
@@ -391,11 +415,12 @@ router.patch("/by-call/:call_id", async (req, res) => {
          telephony_cost, telephony_provider,
          whatsapp_cost, whatsapp_msg_type,
          other_cost, cost_per_minute,
-         credits_billed, balance_after, extra_costs
+         credits_billed, balance_after, extra_costs,
+         phone_number
        ) VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, $9,
          $10, $11, $12, $13, $14, $15, $16, $17,
-         $18, $19, $20, $21, $22
+         $18, $19, $20, $21, $22, $23
        )
        ON CONFLICT (call_id) DO UPDATE SET
          clinic_id          = COALESCE(EXCLUDED.clinic_id,          call_cost_breakdown.clinic_id),
@@ -418,7 +443,8 @@ router.patch("/by-call/:call_id", async (req, res) => {
          cost_per_minute    = COALESCE(EXCLUDED.cost_per_minute,    call_cost_breakdown.cost_per_minute),
          credits_billed     = COALESCE(EXCLUDED.credits_billed,     call_cost_breakdown.credits_billed),
          balance_after      = COALESCE(EXCLUDED.balance_after,      call_cost_breakdown.balance_after),
-         extra_costs        = COALESCE(EXCLUDED.extra_costs,        call_cost_breakdown.extra_costs)
+         extra_costs        = COALESCE(EXCLUDED.extra_costs,        call_cost_breakdown.extra_costs),
+         phone_number       = COALESCE(EXCLUDED.phone_number,       call_cost_breakdown.phone_number)
        RETURNING ${SELECT_COLS}`,
       [
         call_id,
@@ -443,6 +469,7 @@ router.patch("/by-call/:call_id", async (req, res) => {
         credits_billed      !== undefined ? credits_billed      : null,
         balance_after       !== undefined ? balance_after       : null,
         extra_costs         !== undefined ? JSON.stringify(extra_costs) : "{}",
+        resolved_phone_number !== undefined ? resolved_phone_number : null,
       ]
     );
 
