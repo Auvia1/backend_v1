@@ -460,6 +460,7 @@ router.get("/:id/settings", async (req, res) => {
 router.patch("/:id/settings", async (req, res) => {
   try {
     const {
+      // ── Core booking settings ──────────────────────────────────────────
       advance_booking_days,
       min_booking_notice_period,
       cancellation_window_hours,
@@ -469,7 +470,30 @@ router.patch("/:id/settings", async (req, res) => {
       whatsapp_number,
       logo_url,
       price_per_appointment,
-      is_slots_needed
+      is_slots_needed,
+
+      // ── AI Persona & Voice ─────────────────────────────────────────────
+      system_prompt,
+      agent_name,
+      greeting_text,
+
+      // ── Meta (WhatsApp) credentials ────────────────────────────────────
+      meta_access_token,
+      meta_phone_number_id,
+      whatsapp_verify_token,
+
+      // ── Payment gateway ────────────────────────────────────────────────
+      payment_provider,
+      razorpay_key_id,
+      razorpay_key_secret,
+      razorpay_webhook_secret,
+      payu_merchant_key,
+      payu_merchant_salt,
+
+      // ── Telephony ──────────────────────────────────────────────────────
+      telephony_provider,
+      vobiz_auth_id,
+      vobiz_auth_token,
     } = req.body;
 
     // Check if clinic exists
@@ -482,23 +506,63 @@ router.patch("/:id/settings", async (req, res) => {
       return res.status(404).json({ success: false, error: "Clinic not found" });
     }
 
-    // Update clinic settings
+    // Validate enum constraints client-side for a clear error message
+    if (payment_provider && !["razorpay", "payu", "none"].includes(payment_provider)) {
+      return res.status(400).json({
+        success: false,
+        error: "payment_provider must be one of: razorpay, payu, none"
+      });
+    }
+    if (telephony_provider && !["vobiz", "exotel"].includes(telephony_provider)) {
+      return res.status(400).json({
+        success: false,
+        error: "telephony_provider must be one of: vobiz, exotel"
+      });
+    }
+
+    // Update clinic settings (all fields use COALESCE so omitted fields stay unchanged)
     const settingsRes = await pool.query(
       `UPDATE clinic_settings
        SET
-         advance_booking_days = COALESCE($1, advance_booking_days),
-         min_booking_notice_period = COALESCE($2, min_booking_notice_period),
-         cancellation_window_hours = COALESCE($3, cancellation_window_hours),
-         followup_time = COALESCE($4, followup_time),
-         ai_agent_enabled = COALESCE($5, ai_agent_enabled),
-         ai_agent_languages = COALESCE($6, ai_agent_languages),
-         whatsapp_number = COALESCE($7, whatsapp_number),
-         logo_url = COALESCE($8, logo_url),
-         price_per_appointment = COALESCE($9, price_per_appointment),
-         is_slots_needed = COALESCE($10, is_slots_needed)
-       WHERE clinic_id = $11
+         -- Core booking settings
+         advance_booking_days       = COALESCE($1,  advance_booking_days),
+         min_booking_notice_period  = COALESCE($2,  min_booking_notice_period),
+         cancellation_window_hours  = COALESCE($3,  cancellation_window_hours),
+         followup_time              = COALESCE($4,  followup_time),
+         ai_agent_enabled           = COALESCE($5,  ai_agent_enabled),
+         ai_agent_languages         = COALESCE($6,  ai_agent_languages),
+         whatsapp_number            = COALESCE($7,  whatsapp_number),
+         logo_url                   = COALESCE($8,  logo_url),
+         price_per_appointment      = COALESCE($9,  price_per_appointment),
+         is_slots_needed            = COALESCE($10, is_slots_needed),
+
+         -- AI Persona & Voice
+         system_prompt              = COALESCE($11, system_prompt),
+         agent_name                 = COALESCE($12, agent_name),
+         greeting_text              = COALESCE($13, greeting_text),
+
+         -- Meta (WhatsApp) credentials
+         meta_access_token          = COALESCE($14, meta_access_token),
+         meta_phone_number_id       = COALESCE($15, meta_phone_number_id),
+         whatsapp_verify_token      = COALESCE($16, whatsapp_verify_token),
+
+         -- Payment gateway
+         payment_provider           = COALESCE($17, payment_provider),
+         razorpay_key_id            = COALESCE($18, razorpay_key_id),
+         razorpay_key_secret        = COALESCE($19, razorpay_key_secret),
+         razorpay_webhook_secret    = COALESCE($20, razorpay_webhook_secret),
+         payu_merchant_key          = COALESCE($21, payu_merchant_key),
+         payu_merchant_salt         = COALESCE($22, payu_merchant_salt),
+
+         -- Telephony
+         telephony_provider         = COALESCE($23, telephony_provider),
+         vobiz_auth_id              = COALESCE($24, vobiz_auth_id),
+         vobiz_auth_token           = COALESCE($25, vobiz_auth_token)
+
+       WHERE clinic_id = $26
        RETURNING *`,
       [
+        // Core booking
         advance_booking_days,
         min_booking_notice_period,
         cancellation_window_hours,
@@ -509,9 +573,33 @@ router.patch("/:id/settings", async (req, res) => {
         logo_url,
         price_per_appointment,
         is_slots_needed,
+        // AI Persona
+        system_prompt,
+        agent_name,
+        greeting_text,
+        // Meta / WhatsApp
+        meta_access_token,
+        meta_phone_number_id,
+        whatsapp_verify_token,
+        // Payment gateway
+        payment_provider,
+        razorpay_key_id,
+        razorpay_key_secret,
+        razorpay_webhook_secret,
+        payu_merchant_key,
+        payu_merchant_salt,
+        // Telephony
+        telephony_provider,
+        vobiz_auth_id,
+        vobiz_auth_token,
+        // WHERE
         req.params.id
       ]
     );
+
+    if (settingsRes.rows.length === 0) {
+      return res.status(404).json({ success: false, error: "Clinic settings not found" });
+    }
 
     res.json({
       success: true,
