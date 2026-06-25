@@ -105,7 +105,7 @@ router.get("/:id", async (req, res) => {
 // ─── PATCH /api/phone-numbers/:id (Update phone number) ────────────────────────
 router.patch("/:id", async (req, res) => {
   try {
-    const { service_type, status, is_active } = req.body;
+    const { number, service_type, status, is_active } = req.body;
 
     // Verify phone number exists
     const phoneCheck = await pool.query(
@@ -121,17 +121,32 @@ router.patch("/:id", async (req, res) => {
     const { rows } = await pool.query(
       `UPDATE phone_numbers
        SET
-         service_type = COALESCE($1, service_type),
-         status = COALESCE($2, status),
-         is_active = COALESCE($3, is_active),
+         number = COALESCE($1, number),
+         service_type = COALESCE($2, service_type),
+         status = COALESCE($3, status),
+         is_active = COALESCE($4, is_active),
          updated_at = NOW()
-       WHERE id = $4
+       WHERE id = $5
        RETURNING id, clinic_id, number, service_type, status, is_active, created_at, updated_at`,
-      [service_type, status, is_active, req.params.id]
+      [number, service_type, status, is_active, req.params.id]
     );
 
     res.json({ success: true, data: rows[0] });
   } catch (err) {
+    // Handle unique constraint violation (duplicate phone number)
+    if (err.code === "23505") {
+      return res.status(400).json({
+        success: false,
+        error: "This phone number already exists in the system"
+      });
+    }
+    // Handle invalid phone number format
+    if (err.code === "23514") {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid phone number format. Use digits, spaces, hyphens, and optional + sign."
+      });
+    }
     res.status(400).json({ success: false, error: err.message });
   }
 });
