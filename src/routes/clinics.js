@@ -502,7 +502,6 @@ router.patch("/:id/settings", async (req, res) => {
       ai_agent_languages,
       whatsapp_number,
       logo_url,
-      price_per_appointment,
       is_slots_needed,
 
       // ── AI Persona & Voice ─────────────────────────────────────────────
@@ -566,33 +565,32 @@ router.patch("/:id/settings", async (req, res) => {
          ai_agent_languages         = COALESCE($6,  ai_agent_languages),
          whatsapp_number            = COALESCE($7,  whatsapp_number),
          logo_url                   = COALESCE($8,  logo_url),
-         price_per_appointment      = COALESCE($9,  price_per_appointment),
-         is_slots_needed            = COALESCE($10, is_slots_needed),
+         is_slots_needed            = COALESCE($9, is_slots_needed),
 
          -- AI Persona & Voice
-         system_prompt              = COALESCE($11, system_prompt),
-         agent_name                 = COALESCE($12, agent_name),
-         greeting_text              = COALESCE($13, greeting_text),
+         system_prompt              = COALESCE($10, system_prompt),
+         agent_name                 = COALESCE($11, agent_name),
+         greeting_text              = COALESCE($12, greeting_text),
 
          -- Meta (WhatsApp) credentials
-         meta_access_token          = COALESCE($14, meta_access_token),
-         meta_phone_number_id       = COALESCE($15, meta_phone_number_id),
-         whatsapp_verify_token      = COALESCE($16, whatsapp_verify_token),
+         meta_access_token          = COALESCE($13, meta_access_token),
+         meta_phone_number_id       = COALESCE($14, meta_phone_number_id),
+         whatsapp_verify_token      = COALESCE($15, whatsapp_verify_token),
 
          -- Payment gateway
-         payment_provider           = COALESCE($17, payment_provider),
-         razorpay_key_id            = COALESCE($18, razorpay_key_id),
-         razorpay_key_secret        = COALESCE($19, razorpay_key_secret),
-         razorpay_webhook_secret    = COALESCE($20, razorpay_webhook_secret),
-         payu_merchant_key          = COALESCE($21, payu_merchant_key),
-         payu_merchant_salt         = COALESCE($22, payu_merchant_salt),
+         payment_provider           = COALESCE($16, payment_provider),
+         razorpay_key_id            = COALESCE($17, razorpay_key_id),
+         razorpay_key_secret        = COALESCE($18, razorpay_key_secret),
+         razorpay_webhook_secret    = COALESCE($19, razorpay_webhook_secret),
+         payu_merchant_key          = COALESCE($20, payu_merchant_key),
+         payu_merchant_salt         = COALESCE($21, payu_merchant_salt),
 
          -- Telephony
-         telephony_provider         = COALESCE($23, telephony_provider),
-         vobiz_auth_id              = COALESCE($24, vobiz_auth_id),
-         vobiz_auth_token           = COALESCE($25, vobiz_auth_token)
+         telephony_provider         = COALESCE($22, telephony_provider),
+         vobiz_auth_id              = COALESCE($23, vobiz_auth_id),
+         vobiz_auth_token           = COALESCE($24, vobiz_auth_token)
 
-       WHERE clinic_id = $26
+       WHERE clinic_id = $25
        RETURNING *`,
       [
         // Core booking
@@ -604,7 +602,6 @@ router.patch("/:id/settings", async (req, res) => {
         ai_agent_languages,
         whatsapp_number,
         logo_url,
-        price_per_appointment,
         is_slots_needed,
         // AI Persona
         system_prompt,
@@ -644,6 +641,7 @@ router.patch("/:id/settings", async (req, res) => {
 });
 
 // ─── GET /api/clinics/:id ─────────────────────────────────────────────────────
+
 router.get("/:id", async (req, res) => {
   try {
     if (req.clinic_id !== req.params.id) {
