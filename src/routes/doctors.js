@@ -608,17 +608,17 @@ router.get("/", async (req, res) => {
 // ─── POST /api/doctors — create new doctor ──────────────────────────────────
 router.post("/", async (req, res) => {
   try {
-    const { clinic_id, name, speciality, consultation_duration_minutes, buffer_time_minutes, max_appointments_per_day } = req.body;
+    const { clinic_id, name, speciality, consultation_duration_minutes, buffer_time_minutes, max_appointments_per_day, price_charged } = req.body;
 
     if (!clinic_id || !name) {
       return res.status(400).json({ success: false, error: "clinic_id and name are required" });
     }
 
     const result = await pool.query(
-      `INSERT INTO doctors (clinic_id, name, speciality, consultation_duration_minutes, buffer_time_minutes, max_appointments_per_day)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO doctors (clinic_id, name, speciality, consultation_duration_minutes, buffer_time_minutes, max_appointments_per_day, price_charged)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [clinic_id, name, speciality || null, consultation_duration_minutes || 30, buffer_time_minutes || 0, max_appointments_per_day || null]
+      [clinic_id, name, speciality || null, consultation_duration_minutes || 30, buffer_time_minutes || 0, max_appointments_per_day || null, price_charged != null ? price_charged : null]
     );
 
     res.status(201).json({ success: true, data: result.rows[0] });
@@ -651,7 +651,7 @@ router.get("/:id", async (req, res) => {
 router.patch("/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, speciality, consultation_duration_minutes, buffer_time_minutes, max_appointments_per_day, is_active } = req.body;
+    const { name, speciality, consultation_duration_minutes, buffer_time_minutes, max_appointments_per_day, is_active, price_charged } = req.body;
 
     const updates = [];
     const values = [];
@@ -663,6 +663,7 @@ router.patch("/:id", async (req, res) => {
     if (buffer_time_minutes !== undefined) { updates.push(`buffer_time_minutes = $${paramCount++}`); values.push(buffer_time_minutes); }
     if (max_appointments_per_day !== undefined) { updates.push(`max_appointments_per_day = $${paramCount++}`); values.push(max_appointments_per_day); }
     if (is_active !== undefined) { updates.push(`is_active = $${paramCount++}`); values.push(is_active); }
+    if (price_charged !== undefined) { updates.push(`price_charged = $${paramCount++}`); values.push(price_charged); }
 
     if (updates.length === 0) {
       return res.status(400).json({ success: false, error: "No fields to update" });
