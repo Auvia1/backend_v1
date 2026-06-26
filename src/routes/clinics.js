@@ -46,8 +46,41 @@ function normalizeBillingCycle(cycle) {
   return normalized[cycle] || cycle;
 }
 
+// ─── GET /api/clinics (Public – used by login page dropdown) ──────────────────
+// Returns a lightweight list of clinic names for the login search dropdown.
+// No auth required – only exposes id and name.
+router.get("/", async (req, res) => {
+  try {
+    const search = (req.query.search || "").trim();
+    const limit  = Math.min(parseInt(req.query.limit) || 50, 100);
+
+    const params = [];
+    let whereClause = "WHERE deleted_at IS NULL";
+
+    if (search) {
+      whereClause += ` AND name ILIKE $1`;
+      params.push(`%${search}%`);
+    }
+
+    const { rows } = await pool.query(
+      `SELECT id, name
+       FROM clinics
+       ${whereClause}
+       ORDER BY name ASC
+       LIMIT ${limit}`,
+      params
+    );
+
+    res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error("List clinics error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ─── POST /api/clinics/register (Multi-step form submission) ──────────────────
 router.post("/register", async (req, res) => {
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
