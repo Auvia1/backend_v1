@@ -18,6 +18,7 @@ function authenticateToken(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.clinic_id = decoded.clinic_id;
     req.username  = decoded.username;
+    req.is_admin  = decoded.role === "admin";
     next();
   } catch (err) {
     return res.status(401).json({ success: false, error: "Invalid token" });
@@ -44,7 +45,7 @@ router.get("/", async (req, res) => {
       return res.status(400).json({ success: false, error: "clinic_id query param required" });
     }
 
-    if (req.clinic_id !== clinic_id) {
+    if (!req.is_admin && req.clinic_id !== clinic_id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
 
@@ -385,7 +386,17 @@ router.patch("/:id", async (req, res) => {
 // ─── GET /api/calls/stats — get call statistics ────────────────────────────
 router.get("/stats/summary", async (req, res) => {
   try {
-    const { start_date, end_date } = req.query;
+    const { clinic_id, start_date, end_date } = req.query;
+
+    const targetClinicId = clinic_id || req.clinic_id;
+
+    if (!targetClinicId) {
+      return res.status(400).json({ success: false, error: "clinic_id is required" });
+    }
+
+    if (!req.is_admin && req.clinic_id && req.clinic_id !== targetClinicId) {
+      return res.status(403).json({ success: false, error: "Forbidden" });
+    }
 
     let query = `
       SELECT
@@ -402,7 +413,7 @@ router.get("/stats/summary", async (req, res) => {
       WHERE clinic_id = $1
     `;
 
-    const params = [req.clinic_id];
+    const params = [targetClinicId];
     let paramIdx = 2;
 
     if (start_date) {
