@@ -554,11 +554,11 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // ── Upsert patient — UNIQUE(clinic_id, phone) ─────────────────────────────
+    // ── Upsert patient — UNIQUE(clinic_id, phone, name) ───────────────────────
     const patientResult = await client.query(
       `INSERT INTO patients (clinic_id, name, phone)
        VALUES ($1, $2, $3)
-       ON CONFLICT (clinic_id, phone) DO UPDATE SET name = EXCLUDED.name
+       ON CONFLICT (clinic_id, phone, name) DO UPDATE SET name = EXCLUDED.name
        RETURNING id`,
       [clinic_id, patient_name, patient_phone]
     );

@@ -18,6 +18,7 @@ function authenticateToken(req, res, next) {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.clinic_id = decoded.clinic_id;
     req.username = decoded.username;
+    req.is_admin = decoded.role === "admin";
     next();
   } catch (err) {
     return res.status(401).json({ success: false, error: "Invalid token" });
@@ -70,7 +71,7 @@ router.post("/", async (req, res) => {
     }
 
     // ── Verify clinic_id matches authenticated user's clinic ────────────────
-    if (req.clinic_id !== clinic_id) {
+    if (!req.is_admin && req.clinic_id !== clinic_id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
 
@@ -211,7 +212,7 @@ router.get("/", async (req, res) => {
       });
     }
 
-    if (req.clinic_id !== clinic_id) {
+    if (!req.is_admin && req.clinic_id !== clinic_id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
 
@@ -387,7 +388,7 @@ router.get("/:id", async (req, res) => {
     const slot = result.rows[0];
 
     // ── Verify clinic access ────────────────────────────────────────────────
-    if (req.clinic_id !== slot.clinic_id) {
+    if (!req.is_admin && req.clinic_id !== slot.clinic_id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
 
@@ -425,7 +426,7 @@ router.patch("/:id", async (req, res) => {
     const slot = existing.rows[0];
 
     // ── Verify clinic access ────────────────────────────────────────────────
-    if (req.clinic_id !== slot.clinic_id) {
+    if (!req.is_admin && req.clinic_id !== slot.clinic_id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
 
@@ -588,7 +589,7 @@ router.delete("/:id", async (req, res) => {
     const slot = existing.rows[0];
 
     // ── Verify clinic access ────────────────────────────────────────────────
-    if (req.clinic_id !== slot.clinic_id) {
+    if (!req.is_admin && req.clinic_id !== slot.clinic_id) {
       return res.status(403).json({ success: false, error: "Forbidden" });
     }
 
