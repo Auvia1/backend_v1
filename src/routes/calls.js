@@ -2,6 +2,7 @@ const express = require("express");
 const router  = express.Router();
 const pool    = require("../../database/db");
 const jwt     = require("jsonwebtoken");
+const axios   = require("axios");
 
 const JWT_SECRET = process.env.JWT_SECRET;
 
@@ -169,6 +170,115 @@ router.get("/", async (req, res) => {
   } catch (err) {
     console.error("Calls fetch error:", err);
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── GET /api/calls/stats/summary — get call statistics ───────────────────
+// NOTE: This must be defined BEFORE the "/:id" route below, otherwise
+// Express will match "/stats/summary" as "/:id" with id = "stats".
+router.get("/stats/summary", async (req, res) => {
+  try {
+    const { clinic_id, start_date, end_date } = req.query;
+
+    const targetClinicId = clinic_id || req.clinic_id;
+
+    if (!targetClinicId) {
+      return res.status(400).json({ success: false, error: "clinic_id is required" });
+    }
+
+    if (!req.is_admin && req.clinic_id && req.clinic_id !== targetClinicId) {
+      return res.status(403).json({ success: false, error: "Forbidden" });
+    }
+
+    let query = `
+      SELECT
+        COUNT(*) AS total_calls,
+        COUNT(*) FILTER (WHERE type = 'incoming') AS incoming_calls,
+        COUNT(*) FILTER (WHERE type = 'outgoing') AS outgoing_calls,
+        COUNT(*) FILTER (WHERE agent_type = 'ai') AS ai_calls,
+        COUNT(*) FILTER (WHERE agent_type = 'human') AS human_calls,
+        ROUND(AVG(duration)::numeric, 2) AS avg_duration,
+        SUM(duration) AS total_duration,
+        MAX(time) AS last_call_time,
+        MIN(time) AS first_call_time
+      FROM calls
+      WHERE clinic_id = $1
+    `;
+
+    const params = [targetClinicId];
+    let paramIdx = 2;
+
+    if (start_date) {
+      query += ` AND DATE(time) >= $${paramIdx++}`;
+      params.push(start_date);
+    }
+
+    if (end_date) {
+      query += ` AND DATE(time) <= $${paramIdx++}`;
+      params.push(end_date);
+    }
+
+    const result = await pool.query(query, params);
+
+    res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    console.error("Call stats error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── GET /api/calls/proxy-recording/:id — stream recording audio ──────────
+// NOTE: This must also be defined BEFORE the "/:id" route below, otherwise
+// Express will match "/proxy-recording/123" as "/:id" with id = "proxy-recording".
+router.get("/proxy-recording/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `SELECT recording
+       FROM calls
+       WHERE id = $1
+         AND clinic_id = $2`,
+      [id, req.clinic_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: "Call not found",
+      });
+    }
+
+    const recordingUrl = result.rows[0].recording;
+
+    if (!recordingUrl) {
+      return res.status(404).json({
+        success: false,
+        error: "Recording not available",
+      });
+    }
+
+    const response = await axios.get(recordingUrl, {
+      responseType: "stream",
+      headers: {
+        "X-Auth-ID": process.env.VOBIZ_AUTH_ID,
+        "X-Auth-Token": process.env.VOBIZ_AUTH_TOKEN,
+      },
+    });
+
+    res.setHeader(
+      "Content-Type",
+      response.headers["content-type"] || "audio/mpeg"
+    );
+
+    response.data.pipe(res);
+  } catch (err) {
+    console.error(err.response?.data || err.message);
+
+    res.status(500).json({
+      success: false,
+      error: "Unable to fetch recording",
+    });
   }
 });
 
@@ -380,58 +490,6 @@ router.patch("/:id", async (req, res) => {
   } catch (err) {
     console.error("Call update error:", err);
     res.status(400).json({ success: false, error: err.message });
-  }
-});
-
-// ─── GET /api/calls/stats — get call statistics ────────────────────────────
-router.get("/stats/summary", async (req, res) => {
-  try {
-    const { clinic_id, start_date, end_date } = req.query;
-
-    const targetClinicId = clinic_id || req.clinic_id;
-
-    if (!targetClinicId) {
-      return res.status(400).json({ success: false, error: "clinic_id is required" });
-    }
-
-    if (!req.is_admin && req.clinic_id && req.clinic_id !== targetClinicId) {
-      return res.status(403).json({ success: false, error: "Forbidden" });
-    }
-
-    let query = `
-      SELECT
-        COUNT(*) AS total_calls,
-        COUNT(*) FILTER (WHERE type = 'incoming') AS incoming_calls,
-        COUNT(*) FILTER (WHERE type = 'outgoing') AS outgoing_calls,
-        COUNT(*) FILTER (WHERE agent_type = 'ai') AS ai_calls,
-        COUNT(*) FILTER (WHERE agent_type = 'human') AS human_calls,
-        ROUND(AVG(duration)::numeric, 2) AS avg_duration,
-        SUM(duration) AS total_duration,
-        MAX(time) AS last_call_time,
-        MIN(time) AS first_call_time
-      FROM calls
-      WHERE clinic_id = $1
-    `;
-
-    const params = [targetClinicId];
-    let paramIdx = 2;
-
-    if (start_date) {
-      query += ` AND DATE(time) >= $${paramIdx++}`;
-      params.push(start_date);
-    }
-
-    if (end_date) {
-      query += ` AND DATE(time) <= $${paramIdx++}`;
-      params.push(end_date);
-    }
-
-    const result = await pool.query(query, params);
-
-    res.json({ success: true, data: result.rows[0] });
-  } catch (err) {
-    console.error("Call stats error:", err);
-    res.status(500).json({ success: false, error: err.message });
   }
 });
 
