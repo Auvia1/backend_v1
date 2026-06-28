@@ -234,6 +234,8 @@ router.get("/proxy-recording/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
+    console.log("Proxy recording requested:", req.params.id);
+
     const result = await pool.query(
       `SELECT recording
        FROM calls
@@ -242,6 +244,8 @@ router.get("/proxy-recording/:id", async (req, res) => {
       [id, req.clinic_id]
     );
 
+    console.log("DB Result:", result.rows);
+
     if (result.rows.length === 0) {
       return res.status(404).json({
         success: false,
@@ -249,7 +253,8 @@ router.get("/proxy-recording/:id", async (req, res) => {
       });
     }
 
-    const recordingUrl = result.rows[0].recording;
+    const recordingUrl = result.rows[0]?.recording;
+    console.log("Recording URL:", recordingUrl);
 
     if (!recordingUrl) {
       return res.status(404).json({
@@ -257,6 +262,8 @@ router.get("/proxy-recording/:id", async (req, res) => {
         error: "Recording not available",
       });
     }
+
+    console.log("Fetching from Vobiz...");
 
     const response = await axios.get(recordingUrl, {
       responseType: "stream",
@@ -273,7 +280,9 @@ router.get("/proxy-recording/:id", async (req, res) => {
 
     response.data.pipe(res);
   } catch (err) {
-    console.error(err.response?.data || err.message);
+    console.error(err.response?.status);
+    console.error(err.response?.data);
+    console.error(err.message);
 
     res.status(500).json({
       success: false,
