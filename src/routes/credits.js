@@ -177,7 +177,11 @@ router.post("/create-order", authenticateToken, async (req, res) => {
 
       pkg = packageResult.rows[0];
     }
-
+    // GST calculation
+    const baseAmount = parseFloat(pkg.price_inr);
+    const gstPercentage = 18;
+    const gstAmount = Number((baseAmount * gstPercentage / 100).toFixed(2));
+    const totalAmount = Number((baseAmount + gstAmount).toFixed(2));
     const rzp = getRazorpay();
     if (!rzp) {
       return res.status(500).json({ success: false, error: "Payment gateway is not configured" });
@@ -186,32 +190,67 @@ router.post("/create-order", authenticateToken, async (req, res) => {
     // Create Razorpay order (amount in paise)
     const shortClinicId = clinic_id.split('-')[0] || clinic_id.substring(0, 8);
     const order = await rzp.orders.create({
-      amount:   Math.round(parseFloat(pkg.price_inr) * 100),
+      amount: Math.round(totalAmount * 100),
       currency: "INR",
       receipt:  `rcpt_${shortClinicId}_${Date.now()}`,
       notes: {
         clinic_id,
-        package_id,
+        package_id: pkg.id,
+        package_name: pkg.name,
         credits: pkg.credits.toString(),
+        base_amount: baseAmount.toString(),
+        gst_percentage: gstPercentage.toString(),
+        gst_amount: gstAmount.toString(),
       },
     });
 
     // Insert pending payment record
     await pool.query(
-      `INSERT INTO credit_payments (clinic_id, razorpay_order_id, amount, currency, credits_purchased, status)
-       VALUES ($1, $2, $3, $4, $5, 'pending')`,
-      [clinic_id, order.id, pkg.price_inr, "INR", pkg.credits]
+      `INSERT INTO credit_payments
+      (
+          clinic_id,
+          razorpay_order_id,
+          base_amount,
+          gst_percentage,
+          gst_amount,
+          amount,
+          currency,
+          credits_purchased,
+          status
+      )
+      VALUES
+      ($1,$2,$3,$4,$5,$6,$7,$8,'pending')`,
+      [
+          clinic_id,
+          order.id,
+          baseAmount,
+          gstPercentage,
+          gstAmount,
+          totalAmount,
+          "INR",
+          pkg.credits,
+      ]
     );
 
     res.json({
       success: true,
       data: {
         razorpay_order_id: order.id,
-        amount:            Math.round(parseFloat(pkg.price_inr) * 100),
-        currency:          "INR",
-        package_name:      pkg.name,
-        credits:           parseFloat(pkg.credits),
-        key_id:            process.env.RAZORPAY_KEY_ID,
+
+        base_amount: baseAmount,
+        gst_percentage: gstPercentage,
+        gst_amount: gstAmount,
+        total_amount: totalAmount,
+
+        amount: Math.round(totalAmount * 100),
+
+        currency: "INR",
+
+        package_name: pkg.name,
+
+        credits: parseFloat(pkg.credits),
+
+        key_id: process.env.RAZORPAY_KEY_ID,
       },
     });
   } catch (err) {
